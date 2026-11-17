@@ -42,7 +42,7 @@ export function InviteLinkDialog({ collaboratorName, invite, onClose }: Props) {
         />
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
-            Fechar
+            Concluir
           </Button>
           <Button onClick={copy}>{copied ? "Link copiado" : "Copiar link"}</Button>
         </div>

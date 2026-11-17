@@ -33,7 +33,7 @@ export function PortalShell({ user, children }: Props) {
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <Link href="/" className="text-lg font-semibold text-brand-700">
             comprarCasa
           </Link>
@@ -67,7 +67,7 @@ export function PortalShell({ user, children }: Props) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
     </div>
   );
 }

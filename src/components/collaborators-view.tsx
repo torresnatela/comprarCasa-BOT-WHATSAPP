@@ -126,7 +126,7 @@ export function CollaboratorsView({ currentUserId }: { currentUserId: string }) 
         <p className="text-sm text-gray-600">Carregando colaboradores…</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[880px] text-left text-sm">
             <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
                 <th scope="col" className="px-4 py-3 font-medium">Nome</th>
@@ -144,7 +144,7 @@ export function CollaboratorsView({ currentUserId }: { currentUserId: string }) 
                 const busy = busyId === collaborator.id;
                 return (
                   <tr key={collaborator.id} className={inactive ? "text-gray-500" : ""}>
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                    <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-900">
                       {collaborator.name}
                     </td>
                     <td className="px-4 py-3">{collaborator.email}</td>
