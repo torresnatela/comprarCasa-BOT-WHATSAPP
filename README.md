@@ -4,9 +4,13 @@ Sistema para imobiliária: recebe leads pelo WhatsApp (Evolution API), qualifica
 com IA, salva o lead e distribui em rodízio para os vendedores. A gestão usa um
 portal para cadastrar a equipe.
 
-**O que já existe (base):** login, papéis de acesso, cadastro de colaboradores
-com link de convite e toda a estrutura de testes. WhatsApp, IA e rodízio são as
-[próximas fases](#próximas-fases).
+**O que já existe:**
+
+- Login, papéis de acesso e cadastro de colaboradores com link de convite.
+- Integração com a Evolution API: as mensagens recebidas no WhatsApp viram
+  leads, a conversa fica guardada e o gestor responde pelo portal.
+
+Qualificação por IA e rodízio são as [próximas fases](#próximas-fases).
 
 ## Stack
 
@@ -65,8 +69,9 @@ src/
 ├─ proxy.ts              manda para /login quem não tem cookie de sessão
 └─ server/
    ├─ controllers/       CONTROLLER: Request → Response, validação e permissão
-   ├─ services/          regras de negócio (auth, convites, colaboradores)
+   ├─ services/          regras de negócio (auth, convites, colaboradores, conversas)
    ├─ models/            MODEL: acesso ao banco
+   ├─ integrations/      clientes de serviços externos (Evolution API)
    ├─ db/                schema, migrations, conexão e seed
    ├─ http/              erros, cookies, guard de autorização
    ├─ validation/        schemas Zod
@@ -88,7 +93,7 @@ Convenções:
 
 | Papel | Pode |
 |---|---|
-| **Gestor** | Tudo: cadastrar, editar, desativar colaboradores e gerar links de acesso |
+| **Gestor** | Tudo: colaboradores, links de acesso, leads, conversas e configuração do WhatsApp |
 | **Vendedor** | Entrar no portal e ver os próprios dados (depois: os próprios leads) |
 
 - O gestor cadastra o colaborador e recebe um **link de convite** (uso único,
@@ -115,14 +120,67 @@ Convenções:
 | `POST /api/colaboradores/:id/convite` | gestor | Gera novo link |
 | `GET /api/convites/:token` | público | Valida o convite |
 | `POST /api/convites/:token` | público | Cria a senha e entra |
+| `GET /api/leads` | gestor | Leads, do mais recente para o mais antigo |
+| `GET /api/leads/:id` | gestor | Lead e a conversa |
+| `POST /api/leads/:id/mensagens` | gestor | Responde pelo WhatsApp |
+| `GET /api/whatsapp/status` | gestor | Estado da instância e do webhook |
+| `POST /api/whatsapp/webhook` | gestor | Registra o webhook do portal na Evolution |
+| `POST /api/webhooks/evolution` | segredo no cabeçalho | Recebe os eventos da Evolution API |
 | `GET /api/health` | público | Verificação de saúde |
+
+## WhatsApp (Evolution API)
+
+O portal usa uma instância que já existe e está conectada numa Evolution API
+v2 (testado com a 2.3.7). Ele não cria instâncias nem lê QR code.
+
+| Variável | Valor |
+|---|---|
+| `EVOLUTION_API_URL` | Endereço do servidor da Evolution API |
+| `EVOLUTION_INSTANCE` | Nome exato da instância (pode ter espaços) |
+| `EVOLUTION_API_KEY` | **Token da instância** (veja abaixo) |
+| `EVOLUTION_WEBHOOK_SECRET` | Segredo próprio, com 16 caracteres ou mais |
+
+**Use o token da instância, não a chave global.** A chave global dá acesso a
+todas as instâncias do servidor; o token só à instância do portal. Ele aparece
+no painel da Evolution (Manager), nos dados da instância.
+
+Gere o segredo do webhook com:
+
+```bash
+openssl rand -hex 32
+```
+
+Depois do deploy, entre como gestor, abra **WhatsApp** e clique em **Registrar
+webhook**. O portal aponta a instância para `APP_URL/api/webhooks/evolution`
+e passa a receber as mensagens. Se a instância já enviava mensagens para outro
+sistema, a tela avisa e pede confirmação antes de substituir.
+
+Como funciona:
+
+- A primeira mensagem de um contato cria o lead; as seguintes entram na mesma
+  conversa. A mesma mensagem entregue duas vezes não duplica.
+- Mensagens de grupo, status e canais são ignoradas. Imagem, áudio, vídeo e
+  documento aparecem como marcador (`[imagem]`, `[áudio]`…), sem baixar o
+  arquivo.
+- O que a imobiliária digita no próprio celular para um lead também entra na
+  conversa. Conversas iniciadas pela imobiliária com um número desconhecido
+  não viram lead.
+- O webhook só aceita chamadas com o segredo e só processa eventos da
+  instância configurada. O corpo enviado pela Evolution traz a chave da
+  instância, por isso o payload nunca é gravado nem registrado em log.
+- A resposta pelo portal só é gravada depois que a Evolution confirma o envio.
+
+O webhook precisa de endereço público com HTTPS, então o recebimento real só
+funciona no deploy (ou com um túnel na máquina de desenvolvimento). Os testes
+usam uma Evolution falsa e não tocam no WhatsApp.
 
 ## Deploy na Vercel
 
 1. Importe o repositório na Vercel (preset Next.js).
 2. Em **Storage**, adicione um Postgres (Neon) — ele cria `DATABASE_URL`.
 3. Em **Settings → Environment Variables**, defina `APP_URL` com a URL pública
-   do portal (usada no link de convite).
+   do portal (usada no link de convite e no endereço do webhook) e as quatro
+   variáveis `EVOLUTION_*` descritas em [WhatsApp](#whatsapp-evolution-api).
 4. Em **Settings → Build & Deployment**, use como Build Command
    `pnpm db:migrate && pnpm build`, para aplicar as migrations a cada deploy.
 5. Crie o primeiro gestor uma única vez, da sua máquina, apontando para o banco
@@ -137,12 +195,18 @@ Vercel e no `.env.local`, nunca no repositório.
 
 ## Próximas fases
 
-1. **Webhook da Evolution API** — receber mensagens em
-   `POST /api/webhooks/evolution`; tabelas de leads, conversas e mensagens.
-2. **Qualificação por IA** — conduzir a conversa e extrair os dados do lead.
-3. **Rodízio** — distribuir os leads entre vendedores ativos e avisá-los pelo
-   WhatsApp.
-4. **Portal** — lista de leads, histórico da conversa e configuração do rodízio.
+1. **Qualificação por IA** — conduzir a conversa e extrair os dados do lead.
+   O ponto de encaixe é `conversationService.receive()`, por onde passa toda
+   mensagem recebida.
+2. **Rodízio** — distribuir os leads entre vendedores ativos e avisá-los pelo
+   WhatsApp; vendedor passa a ver os próprios leads.
+3. **Mídia** — baixar e exibir imagens, áudios e documentos.
 
-Pendências conhecidas da base: "esqueci minha senha" pelo próprio usuário
-(hoje o gestor gera um novo link) e limite de tentativas de login.
+Pendências conhecidas:
+
+- "Esqueci minha senha" pelo próprio usuário (hoje o gestor gera um novo link)
+  e limite de tentativas de login.
+- O cadastro de colaborador assume telefone brasileiro (acrescenta o DDI 55 a
+  números de 10 ou 11 dígitos). Para outros países, informe o número já com o
+  DDI.
+- A conversa se atualiza sozinha a cada poucos segundos, não em tempo real.
