@@ -42,6 +42,22 @@ export default async function HomePage() {
 
         {user.role === "GESTOR" && (
           <section className="flex flex-col rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="text-sm font-medium text-gray-500">Leads</h2>
+            <p className="mt-3 flex-1 text-sm text-gray-700">
+              Veja quem escreveu para o WhatsApp da imobiliária e responda pelo
+              portal.
+            </p>
+            <Link
+              href="/leads"
+              className="mt-4 text-sm font-medium text-brand-700 hover:underline"
+            >
+              Ver leads →
+            </Link>
+          </section>
+        )}
+
+        {user.role === "GESTOR" && (
+          <section className="flex flex-col rounded-xl border border-gray-200 bg-white p-5">
             <h2 className="text-sm font-medium text-gray-500">Equipe</h2>
             <p className="mt-3 flex-1 text-sm text-gray-700">
               Cadastre gestores e vendedores e envie o link para cada um criar a

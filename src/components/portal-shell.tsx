@@ -18,7 +18,11 @@ export function PortalShell({ user, children }: Props) {
   const links = [
     { href: "/", label: "Início" },
     ...(user.role === "GESTOR"
-      ? [{ href: "/colaboradores", label: "Colaboradores" }]
+      ? [
+          { href: "/leads", label: "Leads" },
+          { href: "/colaboradores", label: "Colaboradores" },
+          { href: "/whatsapp", label: "WhatsApp" },
+        ]
       : []),
   ];
 
@@ -39,7 +43,10 @@ export function PortalShell({ user, children }: Props) {
           </Link>
           <nav aria-label="Principal" className="flex gap-1">
             {links.map((link) => {
-              const current = pathname === link.href;
+              const current =
+                link.href === "/"
+                  ? pathname === "/"
+                  : pathname === link.href || pathname.startsWith(`${link.href}/`);
               return (
                 <Link
                   key={link.href}

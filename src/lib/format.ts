@@ -11,13 +11,22 @@ export const STATUS_LABELS: Record<UserStatus, string> = {
   INATIVO: "Inativo",
 };
 
-/** `5511988887777` → `+55 (11) 98888-7777`. */
-export function formatPhone(digits: string): string {
+/** `5511988887777` → `+55 (11) 98888-7777`; `351912345678` → `+351 912 345 678`. */
+export function formatPhone(digits: string | null | undefined): string {
   if (!digits) return "—";
   const brazilian = digits.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
-  if (!brazilian) return `+${digits}`;
-  const [, ddd, prefix, suffix] = brazilian;
-  return `+55 (${ddd}) ${prefix}-${suffix}`;
+  if (brazilian) {
+    const [, ddd, prefix, suffix] = brazilian;
+    return `+55 (${ddd}) ${prefix}-${suffix}`;
+  }
+  const portuguese = digits.match(/^351(\d{3})(\d{3})(\d{3})$/);
+  if (portuguese) return `+351 ${portuguese.slice(1).join(" ")}`;
+  return `+${digits}`;
+}
+
+/** Como chamar um lead na tela quando o WhatsApp não informa o nome. */
+export function leadTitle(lead: { name: string | null; phone: string | null }): string {
+  return lead.name || (lead.phone ? formatPhone(lead.phone) : "Contato sem número");
 }
 
 export function formatDateTime(iso: string, timeZone?: string): string {
