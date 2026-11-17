@@ -1,7 +1,8 @@
 import { pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { USER_ROLES, USER_STATUSES } from "../../lib/roles";
 
-export const USER_ROLES = ["GESTOR", "VENDEDOR"] as const;
-export const USER_STATUSES = ["PENDENTE", "ATIVO", "INATIVO"] as const;
+export { USER_ROLES, USER_STATUSES };
+export type { UserRole, UserStatus } from "../../lib/roles";
 
 export const userRole = pgEnum("user_role", USER_ROLES);
 export const userStatus = pgEnum("user_status", USER_STATUSES);
@@ -48,8 +49,6 @@ export const invites = pgTable("invites", {
   createdAt,
 });
 
-export type UserRole = (typeof USER_ROLES)[number];
-export type UserStatus = (typeof USER_STATUSES)[number];
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;

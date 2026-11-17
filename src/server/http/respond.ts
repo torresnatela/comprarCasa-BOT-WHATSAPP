@@ -7,7 +7,20 @@ export function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
 }
 
+/**
+ * O Next sinaliza redirecionamentos e interrupções de pré-renderização com
+ * erros que carregam `digest`. Eles não são falhas e precisam seguir adiante.
+ */
+function isFrameworkSignal(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    typeof (error as { digest?: unknown }).digest === "string"
+  );
+}
+
 function errorResponse(error: unknown): Response {
+  if (isFrameworkSignal(error)) throw error;
   if (error instanceof AppError) {
     return json(
       {
