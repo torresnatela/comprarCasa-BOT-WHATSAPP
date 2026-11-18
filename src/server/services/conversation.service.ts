@@ -3,7 +3,7 @@ import type { Database } from "../db/types";
 import { AppError, NotFoundError } from "../http/errors";
 import type { EvolutionClient } from "../integrations/evolution/client";
 import type { IncomingMessage } from "../integrations/evolution/webhook-payload";
-import { leadModel } from "../models/lead.model";
+import { type LeadWithSeller, leadModel } from "../models/lead.model";
 import { messageModel } from "../models/message.model";
 
 type Deps = {
@@ -72,14 +72,14 @@ export function createConversationService({ db, evolution }: Deps) {
       });
     },
 
-    listLeads(): Promise<Lead[]> {
+    listLeads(): Promise<LeadWithSeller[]> {
       return leadModel(db).list();
     },
 
     async getConversation(
       leadId: string,
-    ): Promise<{ lead: Lead; messages: Message[] }> {
-      const lead = await leadModel(db).findById(leadId);
+    ): Promise<{ lead: LeadWithSeller; messages: Message[] }> {
+      const lead = await leadModel(db).findWithSeller(leadId);
       if (!lead) throw new NotFoundError("LEAD_NOT_FOUND", "Lead não encontrado.");
       return { lead, messages: await messageModel(db).listByLead(leadId) };
     },

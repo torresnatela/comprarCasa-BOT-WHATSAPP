@@ -3,6 +3,7 @@ import type { Database } from "@/server/db/types";
 import { createServices } from "@/server/services";
 import { INSTANCE } from "./evolution-fixtures";
 import { createFakeEvolution } from "./fake-evolution";
+import { createFakeQualifier } from "./fake-qualifier";
 import { fastHasher } from "./hasher";
 
 export const WEBHOOK_SECRET = "segredo-do-webhook-de-teste";
@@ -33,14 +34,28 @@ export function createTestApp(
         missing: ["EVOLUTION_API_URL", "EVOLUTION_WEBHOOK_SECRET"],
       };
 
-  const services = createServices({ db, hasher: fastHasher, whatsapp, appUrl });
+  const ai = createFakeQualifier();
+  const services = createServices({
+    db,
+    hasher: fastHasher,
+    whatsapp,
+    appUrl,
+    qualifier: ai.qualifier,
+  });
+  // Em vez do `after` do Next: guarda as tarefas; só rodam quando o teste chamar `settle`.
+  const deferred: (() => Promise<unknown>)[] = [];
   const controllers = createControllers({
     services,
     secureCookies: false,
     appUrl,
     whatsapp,
+    defer: (task) => {
+      deferred.push(task);
+    },
   });
-  return { services, controllers, evolution: evolution.state };
+  /** Roda (e espera) o que o webhook agendou para depois da resposta. */
+  const settle = () => Promise.all(deferred.splice(0).map((task) => task()));
+  return { services, controllers, evolution: evolution.state, ai: ai.state, settle };
 }
 
 /** Segundo argumento dos route handlers do Next (params é uma Promise). */

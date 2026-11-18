@@ -5,8 +5,12 @@ import {
   leads,
   type NewLead,
   type Qualification,
+  users,
 } from "../db/schema";
 import type { Database } from "../db/types";
+
+/** Lead com o nome do vendedor que o recebeu (nulo se ninguém recebeu). */
+export type LeadWithSeller = Lead & { sellerName: string | null };
 
 type Activity = {
   at: Date;
@@ -33,8 +37,22 @@ export function leadModel(db: Database) {
     },
 
     /** Leads com conversa mais recente primeiro. */
-    async list(): Promise<Lead[]> {
-      return db.select().from(leads).orderBy(desc(leads.lastMessageAt));
+    async list(): Promise<LeadWithSeller[]> {
+      const rows = await db
+        .select({ lead: leads, sellerName: users.name })
+        .from(leads)
+        .leftJoin(users, eq(users.id, leads.assignedTo))
+        .orderBy(desc(leads.lastMessageAt));
+      return rows.map(({ lead, sellerName }) => ({ ...lead, sellerName }));
+    },
+
+    async findWithSeller(id: string): Promise<LeadWithSeller | null> {
+      const [row] = await db
+        .select({ lead: leads, sellerName: users.name })
+        .from(leads)
+        .leftJoin(users, eq(users.id, leads.assignedTo))
+        .where(eq(leads.id, id));
+      return row ? { ...row.lead, sellerName: row.sellerName } : null;
     },
 
     /** Seguro contra duas mensagens do mesmo contato chegando ao mesmo tempo. */
