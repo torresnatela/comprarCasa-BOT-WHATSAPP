@@ -9,7 +9,12 @@ import { QualifierError } from "../integrations/anthropic/qualifier";
 import { leadModel } from "../models/lead.model";
 import { messageModel } from "../models/message.model";
 import { createConversationService } from "./conversation.service";
-import { createQualificationService, handoffText, summarize } from "./qualification.service";
+import {
+  createQualificationService,
+  handoffText,
+  summarize,
+  typingTime,
+} from "./qualification.service";
 
 let testDb: TestDb;
 
@@ -92,6 +97,30 @@ describe("qualificationService.handleInbound — conversa", () => {
       stage: "QUALIFICANDO",
       qualification: { tipoImovel: "casa" },
     });
+  });
+
+  it("como uma pessoa: marca como lidas as mensagens pendentes, mostra 'a escrever' e só então envia", async () => {
+    const { service, evolution } = setup([{ reply: "Procura para comprar ou arrendar?" }]);
+    const lead = await newLead();
+    await inbound(lead.id, "Bom dia", 1);
+    const second = await inbound(lead.id, "procuro um T2", 2);
+    const pending = (await messageModel(testDb.db).listByLead(lead.id)).map((m) => m.externalId);
+
+    await service.handleInbound(lead.id, second);
+
+    expect(evolution.read.map((m) => m.id)).toEqual(pending);
+    expect(evolution.read.every((m) => m.remoteJid === lead.whatsappJid)).toBe(true);
+    expect(evolution.typing).toEqual([{ to: lead.whatsappJid, durationMs: 5_000 }]);
+    expect(evolution.typingMs).toEqual([typingTime("Procura para comprar ou arrendar?")]);
+  });
+
+  it("falha ao marcar como lida ou ao mostrar 'a escrever' não impede a resposta", async () => {
+    const { service, evolution } = setup([{ reply: "Em que zona?" }]);
+    const lead = await newLead();
+    evolution.failReadAndTyping = true;
+
+    expect(await service.handleInbound(lead.id, await inbound(lead.id, "oi"))).toBe("replied");
+    expect(evolution.sent).toHaveLength(1);
   });
 
   it("o eco da resposta da IA que volta pelo webhook é tratado como duplicata", async () => {
@@ -181,7 +210,7 @@ describe("qualificationService — passagem para o vendedor", () => {
     });
     expect(evolution.sent[0]).toEqual({
       to: lead.whatsappJid,
-      text: "Perfeito, obrigada pelas informações! O Carlos vai entrar em contato com você e te ajudar com o que precisa.",
+      text: "Perfeito, obrigada pelas informações! Carlos vai entrar em contacto consigo e ajudar no que precisar.",
     });
     expect(evolution.sent[1].to).toBe("5511911112222");
     expect(evolution.sent[1].text).toContain("Maria Silva");
@@ -217,7 +246,7 @@ describe("qualificationService — passagem para o vendedor", () => {
     expect(evolution.sent).toEqual([
       {
         to: lead.whatsappJid,
-        text: "Perfeito, obrigada pelas informações! Um dos nossos corretores vai entrar em contato com você em breve.",
+        text: "Perfeito, obrigada pelas informações! Um dos nossos consultores vai entrar em contacto consigo brevemente.",
       },
     ]);
   });
@@ -235,7 +264,7 @@ describe("qualificationService — passagem para o vendedor", () => {
       qualificationSummary: "Região: Moema",
     });
     expect(evolution.sent[0].text).toBe(
-      "O Carlos vai entrar em contato com você e te ajudar com o que precisa.",
+      "Carlos vai entrar em contacto consigo e ajudar no que precisar.",
     );
   });
 
@@ -280,10 +309,16 @@ describe("qualificationService — passagem para o vendedor", () => {
 });
 
 describe("textos", () => {
-  it("mensagem final usa só o primeiro nome do vendedor", () => {
+  it("mensagem final em português de Portugal, só com o primeiro nome do vendedor", () => {
     expect(handoffText({ name: "  Carlos Alberto Pereira " })).toBe(
-      "O Carlos vai entrar em contato com você e te ajudar com o que precisa.",
+      "Carlos vai entrar em contacto consigo e ajudar no que precisar.",
     );
+  });
+
+  it("tempo de 'a escrever' cresce com o texto, entre 2 e 7 segundos", () => {
+    expect(typingTime("Olá")).toBe(2_000);
+    expect(typingTime("x".repeat(50))).toBe(3_000);
+    expect(typingTime("x".repeat(1000))).toBe(7_000);
   });
 
   it("resumo de reserva lista os campos apurados", () => {

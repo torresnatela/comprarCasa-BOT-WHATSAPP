@@ -158,7 +158,7 @@ test("a assistente qualifica o lead e o rodízio entrega ao próximo vendedor", 
   await expect
     .poll(() => sentTo(buyerJid).at(-1))
     .toBe(
-      `Obrigada pelas informações! O ${nextFirstName} vai entrar em contato com você e te ajudar com o que precisa.`,
+      `Obrigada pelas informações! ${nextFirstName} vai entrar em contacto consigo e ajudar no que precisar.`,
     );
 
   // O lead aparece entregue ao vendedor, com o resumo.

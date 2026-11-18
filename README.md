@@ -192,8 +192,8 @@ Quando tem o suficiente (ou o lead pede uma pessoa), a assistente encerra:
 
 1. O rodízio escolhe o vendedor ativo e **na fila** que recebeu lead há mais
    tempo (ou nunca recebeu) e o lead fica `DISTRIBUIDO` para ele.
-2. O lead recebe: *"O {primeiro nome do vendedor} vai entrar em contato com
-   você e te ajudar com o que precisa."*
+2. O lead recebe: *"{primeiro nome do vendedor} vai entrar em contacto
+   consigo e ajudar no que precisar."*
 3. O vendedor recebe no WhatsApp o nome, o número, o resumo da qualificação e
    o link da conversa no portal.
 
@@ -202,6 +202,9 @@ genérica. O gestor organiza a fila na tela **Rodízio**.
 
 Regras:
 
+- A assistente escreve sempre em **português de Portugal**.
+- Como uma pessoa: marca as mensagens como lidas, mostra "a escrever…" enquanto
+  pensa e antes de enviar (2 a 7 s, conforme o tamanho do texto).
 - A IA responde depois do 200 do webhook (`after` do Next), esperando
   `QUALIFIER_DELAY_MS` (4 s) para juntar mensagens mandadas em sequência; só a
   mais recente é respondida.

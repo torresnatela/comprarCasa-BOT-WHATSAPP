@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { Lead, Qualification, User } from "../db/schema";
+import type { Lead, Message, Qualification, User } from "../db/schema";
 import type { Database } from "../db/types";
 import type { LeadQualifier } from "../integrations/anthropic/qualifier";
 import type { EvolutionClient } from "../integrations/evolution/client";
@@ -24,6 +24,26 @@ type Deps = {
   delayMs?: number;
   maxBotTurns?: number;
 };
+
+/**
+ * Tempo de "a escrever…" antes de cada mensagem da assistente: proporcional
+ * ao tamanho do texto, como uma pessoa a escrever, entre 2 e 7 segundos.
+ */
+export function typingTime(text: string): number {
+  return Math.min(7_000, Math.max(2_000, 1_000 + text.length * 40));
+}
+
+/** "A escrever…" enquanto a IA pensa na resposta. */
+const THINKING_TYPING_MS = 5_000;
+
+/** Mensagens do lead que chegaram depois da última mensagem da imobiliária. */
+function unansweredInbound(history: Message[]): Message[] {
+  const unanswered: Message[] = [];
+  for (let i = history.length - 1; i >= 0 && history[i].direction === "RECEBIDA"; i--) {
+    unanswered.unshift(history[i]);
+  }
+  return unanswered;
+}
 
 export type QualificationOutcome =
   | "skipped"
@@ -51,17 +71,18 @@ export function summarize(qualification: Qualification): string {
 
 export const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
+/** Mensagem final ao lead, em português de Portugal. */
 export function handoffText(seller: Pick<User, "name"> | null, closing = ""): string {
   const next = seller
-    ? `O ${firstName(seller.name)} vai entrar em contato com você e te ajudar com o que precisa.`
-    : "Um dos nossos corretores vai entrar em contato com você em breve.";
+    ? `${firstName(seller.name)} vai entrar em contacto consigo e ajudar no que precisar.`
+    : "Um dos nossos consultores vai entrar em contacto consigo brevemente.";
   return [closing.trim(), next].filter(Boolean).join(" ");
 }
 
 function sellerNotice(lead: Lead, summary: string, appUrl?: string): string {
   return [
-    "Novo lead para você pelo rodízio!",
-    `Nome: ${lead.name ?? "não informado"}`,
+    "Novo lead para si pelo rodízio!",
+    `Nome: ${lead.name ?? "não indicado"}`,
     `WhatsApp: ${lead.phone ? `+${lead.phone}` : lead.whatsappJid}`,
     "",
     summary,
@@ -80,9 +101,12 @@ export function createQualificationService({
   delayMs = 0,
   maxBotTurns = MAX_BOT_TURNS,
 }: Deps) {
-  /** Envia ao lead e grava como mensagem da IA (o eco do webhook vira duplicata). */
+  /**
+   * Envia ao lead, com "a escrever…" antes, e grava como mensagem da IA (o eco
+   * do webhook vira duplicata).
+   */
   async function sendAsBot(tx: Database, evo: EvolutionClient, lead: Lead, text: string) {
-    const sent = await evo.sendText(lead.whatsappJid, text);
+    const sent = await evo.sendText(lead.whatsappJid, text, { typingMs: typingTime(text) });
     const stored = await messageModel(tx).insertIfNew({
       leadId: lead.id,
       direction: "ENVIADA",
@@ -156,6 +180,18 @@ export function createQualificationService({
         const lead = await leads.findById(leadId);
         if (!lead || lead.stage !== "QUALIFICANDO" || !(await isLatest())) return "skipped";
 
+        const history = await messages.listByLead(leadId);
+        // Como uma pessoa: lê (vistos azuis) e começa a escrever.
+        try {
+          await evo.markAsRead(
+            unansweredInbound(history).map((m) => ({ remoteJid: lead.whatsappJid, id: m.externalId })),
+          );
+        } catch (error) {
+          console.error(`[qualificação] marcar como lida falhou no lead ${leadId}`, error);
+        }
+        // Não espera: a Evolution só responde quando o "a escrever" acaba.
+        evo.showTyping(lead.whatsappJid, THINKING_TYPING_MS).catch(() => undefined);
+
         const collected = lead.qualification ?? {};
         if (!qualifier || (await messages.countByBot(leadId)) >= maxBotTurns) {
           return handoff(tx, evo, lead, { collected, summary: null });
@@ -163,11 +199,7 @@ export function createQualificationService({
 
         let turn;
         try {
-          turn = await qualifier.nextTurn({
-            leadName: lead.name,
-            history: await messages.listByLead(leadId),
-            collected,
-          });
+          turn = await qualifier.nextTurn({ leadName: lead.name, history, collected });
         } catch (error) {
           console.error(`[qualificação] IA falhou para o lead ${leadId}; indo para o rodízio`, error);
           return handoff(tx, evo, lead, { collected, summary: null });
