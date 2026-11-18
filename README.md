@@ -174,6 +174,32 @@ O webhook precisa de endereço público com HTTPS, então o recebimento real só
 funciona no deploy (ou com um túnel na máquina de desenvolvimento). Os testes
 usam uma Evolution falsa e não tocam no WhatsApp.
 
+### Demonstração local (sem WhatsApp real)
+
+`scripts/demo-whatsapp.ts` sobe uma Evolution falsa em `localhost:3199`,
+entrega ao portal três conversas de exemplo e transforma cada linha digitada
+no terminal numa mensagem recebida (`1 texto` para o contato 1, `novo Nome
+texto` para um contato novo). As respostas enviadas pelo portal aparecem no
+terminal. No `.env.local`, use:
+
+```
+APP_URL=http://localhost:3100
+EVOLUTION_API_URL=http://localhost:3199
+EVOLUTION_INSTANCE=Demo comprarCasa
+EVOLUTION_API_KEY=token-demo-local
+EVOLUTION_WEBHOOK_SECRET=<openssl rand -hex 32>
+```
+
+Depois, em dois terminais:
+
+```bash
+pnpm build && pnpm start --port 3100
+pnpm tsx --env-file-if-exists=.env.local scripts/demo-whatsapp.ts
+```
+
+Rodar a demo de novo não duplica os exemplos. O botão "Registrar webhook"
+recusa `localhost` de propósito; ele só funciona com a URL HTTPS do deploy.
+
 ## Deploy na Vercel
 
 1. Importe o repositório na Vercel (preset Next.js).
