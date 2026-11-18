@@ -39,3 +39,12 @@ export function formatDateTime(iso: string, timeZone?: string): string {
   });
   return `${day} às ${time}`;
 }
+
+export type LeadStage = "QUALIFICANDO" | "AGUARDANDO_VENDEDOR" | "DISTRIBUIDO" | "HUMANO";
+
+export const STAGE_LABELS: Record<LeadStage, string> = {
+  QUALIFICANDO: "Com a assistente",
+  AGUARDANDO_VENDEDOR: "Aguardando vendedor",
+  DISTRIBUIDO: "Com vendedor",
+  HUMANO: "Com a equipe",
+};

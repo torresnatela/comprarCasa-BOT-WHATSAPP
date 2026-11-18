@@ -20,6 +20,7 @@ export function PortalShell({ user, children }: Props) {
     ...(user.role === "GESTOR"
       ? [
           { href: "/leads", label: "Leads" },
+          { href: "/rodizio", label: "Rodízio" },
           { href: "/colaboradores", label: "Colaboradores" },
           { href: "/whatsapp", label: "WhatsApp" },
         ]
