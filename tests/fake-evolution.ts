@@ -12,6 +12,8 @@ export function createFakeEvolution() {
     registered: [] as { url: string; secret: string }[],
     connection: "open",
     failWith: null as Error | null,
+    /** Faz falhar só os envios para este destinatário. */
+    failSendTo: null as string | null,
     nextId: 1,
   };
 
@@ -23,6 +25,7 @@ export function createFakeEvolution() {
     instance: INSTANCE,
     async sendText(to, text) {
       guard();
+      if (state.failSendTo === to) throw new Error(`Envio para ${to} falhou`);
       state.sent.push({ to, text });
       return {
         externalId: `SENT-${state.nextId++}`,

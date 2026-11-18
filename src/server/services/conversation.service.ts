@@ -27,8 +27,8 @@ export const whatsappNotConfigured = () =>
 export function createConversationService({ db, evolution }: Deps) {
   return {
     /**
-     * Entrada única de toda mensagem vinda do WhatsApp. É aqui que a
-     * qualificação por IA será ligada: `isNewLead` marca o início da conversa.
+     * Entrada única de toda mensagem vinda do WhatsApp. Só grava: quem chama
+     * decide se a IA de qualificação deve responder (lead em `QUALIFICANDO`).
      */
     receive(incoming: IncomingMessage): Promise<ReceiveResult> {
       return db.transaction(async (tx) => {
@@ -110,6 +110,8 @@ export function createConversationService({ db, evolution }: Deps) {
         if (stored) {
           await leadModel(tx).recordActivity(lead.id, { at: sent.sentAt, text });
         }
+        // Um colaborador respondeu: a IA de qualificação para de falar com o lead.
+        await leadModel(tx).moveStage(lead.id, "QUALIFICANDO", "HUMANO");
         return message;
       });
     },

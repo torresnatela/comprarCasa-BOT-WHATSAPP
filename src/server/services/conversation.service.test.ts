@@ -193,3 +193,18 @@ describe("conversationService.reply", () => {
     });
   });
 });
+
+describe("conversationService.reply — IA de qualificação", () => {
+  it("colaborador respondendo tira o lead da qualificação por IA", async () => {
+    const { service } = setup();
+    const emQualificacao = await createLead(testDb.db, { stage: "QUALIFICANDO" });
+    const distribuido = await createLead(testDb.db, { stage: "DISTRIBUIDO" });
+    const gestor = await createUser(testDb.db, { role: "GESTOR" });
+
+    await service.reply(emQualificacao.id, "Oi, aqui é a Ana", gestor);
+    await service.reply(distribuido.id, "Oi", gestor);
+
+    expect((await service.getConversation(emQualificacao.id)).lead.stage).toBe("HUMANO");
+    expect((await service.getConversation(distribuido.id)).lead.stage).toBe("DISTRIBUIDO");
+  });
+});
