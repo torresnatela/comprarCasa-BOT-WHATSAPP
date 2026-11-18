@@ -1,5 +1,7 @@
 import {
+  boolean,
   index,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -26,6 +28,10 @@ export const users = pgTable("users", {
   role: userRole("role").notNull(),
   status: userStatus("status").notNull().default("PENDENTE"),
   passwordHash: text("password_hash"),
+  /** Vendedor participa do rodízio de leads (o gestor liga/desliga na fila). */
+  inRotation: boolean("in_rotation").notNull().default(true),
+  /** Quando recebeu o último lead do rodízio: quem recebeu há mais tempo é o próximo. */
+  lastAssignedAt: timestamp("last_assigned_at", { withTimezone: true }),
   createdAt,
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
@@ -59,6 +65,33 @@ export const invites = pgTable("invites", {
 export const MESSAGE_DIRECTIONS = ["RECEBIDA", "ENVIADA"] as const;
 export const MESSAGE_TYPES = ["TEXTO", "OUTRO"] as const;
 
+/**
+ * Etapa do lead:
+ * - QUALIFICANDO: a IA está conversando para entender o que ele procura;
+ * - AGUARDANDO_VENDEDOR: qualificado, mas não havia vendedor na fila;
+ * - DISTRIBUIDO: entregue a um vendedor pelo rodízio;
+ * - HUMANO: um colaborador assumiu a conversa (a IA não responde mais).
+ */
+export const LEAD_STAGES = [
+  "QUALIFICANDO",
+  "AGUARDANDO_VENDEDOR",
+  "DISTRIBUIDO",
+  "HUMANO",
+] as const;
+export type LeadStage = (typeof LEAD_STAGES)[number];
+
+/** O que a IA apurou na qualificação. Todos os campos são opcionais. */
+export type Qualification = {
+  objetivo?: string | null;
+  tipoImovel?: string | null;
+  regiao?: string | null;
+  faixaValor?: string | null;
+  pagamento?: string | null;
+  prazo?: string | null;
+  observacoes?: string | null;
+};
+
+export const leadStage = pgEnum("lead_stage", LEAD_STAGES);
 export const messageDirection = pgEnum("message_direction", MESSAGE_DIRECTIONS);
 export const messageType = pgEnum("message_type", MESSAGE_TYPES);
 
@@ -72,6 +105,14 @@ export const leads = pgTable("leads", {
   name: text("name"),
   lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull(),
   lastMessageText: text("last_message_text").notNull(),
+  stage: leadStage("stage").notNull().default("QUALIFICANDO"),
+  /** Vendedor que recebeu o lead pelo rodízio. */
+  assignedTo: uuid("assigned_to").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }),
+  qualification: jsonb("qualification").$type<Qualification>(),
+  qualificationSummary: text("qualification_summary"),
   createdAt,
 });
 
@@ -89,6 +130,8 @@ export const messages = pgTable(
     externalId: text("external_id").notNull().unique(),
     /** Colaborador que respondeu pelo portal (nulo se veio do celular). */
     sentBy: uuid("sent_by").references(() => users.id),
+    /** Mensagem escrita pela IA de qualificação. */
+    sentByBot: boolean("sent_by_bot").notNull().default(false),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
     createdAt,
   },

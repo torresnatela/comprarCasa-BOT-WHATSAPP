@@ -1,5 +1,5 @@
-import { and, asc, count, eq } from "drizzle-orm";
-import { type NewUser, type User, users } from "../db/schema";
+import { and, asc, count, eq, sql } from "drizzle-orm";
+import { leads, type NewUser, type User, users } from "../db/schema";
 import type { Database } from "../db/types";
 import { ConflictError } from "../http/errors";
 import { isUniqueViolation } from "./db-errors";
@@ -25,6 +25,25 @@ async function translatingConflict<T>(run: () => Promise<T>): Promise<T> {
     throw error;
   }
 }
+
+/** Vendedor ativo e na fila do rodízio. */
+const inRotation = and(
+  eq(users.role, "VENDEDOR"),
+  eq(users.status, "ATIVO"),
+  eq(users.inRotation, true),
+);
+
+/** Ordem do rodízio: quem recebeu lead há mais tempo (ou nunca recebeu) vem primeiro. */
+const rotationOrder = [
+  sql`${users.lastAssignedAt} ASC NULLS FIRST`,
+  asc(users.createdAt),
+  asc(users.id),
+];
+
+export type RotationEntry = {
+  user: User;
+  assignedLeads: number;
+};
 
 export function userModel(db: Database) {
   return {
@@ -73,6 +92,47 @@ export function userModel(db: Database) {
         .from(users)
         .where(and(eq(users.role, "GESTOR"), eq(users.status, "ATIVO")));
       return row.total;
+    },
+
+    /**
+     * Próximo vendedor do rodízio, travado até o fim da transação. Duas
+     * distribuições simultâneas nunca escolhem o mesmo vendedor.
+     */
+    async lockNextInRotation(): Promise<User | null> {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(inRotation)
+        .orderBy(...rotationOrder)
+        .limit(1)
+        .for("update", { skipLocked: true });
+      return user ?? null;
+    },
+
+    async markAssigned(id: string, at: Date): Promise<void> {
+      await db.update(users).set({ lastAssignedAt: at }).where(eq(users.id, id));
+    },
+
+    /** Vendedores ativos na ordem do rodízio (os fora da fila vêm no fim). */
+    async listRotation(): Promise<RotationEntry[]> {
+      const assignedLeads = sql<number>`(
+        SELECT count(*)::int FROM ${leads} WHERE ${leads.assignedTo} = ${users.id}
+      )`;
+      const rows = await db
+        .select({ user: users, assignedLeads })
+        .from(users)
+        .where(and(eq(users.role, "VENDEDOR"), eq(users.status, "ATIVO")))
+        .orderBy(sql`${users.inRotation} DESC`, ...rotationOrder);
+      return rows.map((row) => ({ ...row, assignedLeads: Number(row.assignedLeads) }));
+    },
+
+    async setInRotation(id: string, value: boolean): Promise<User | null> {
+      const [user] = await db
+        .update(users)
+        .set({ inRotation: value, updatedAt: new Date() })
+        .where(eq(users.id, id))
+        .returning();
+      return user ?? null;
     },
   };
 }

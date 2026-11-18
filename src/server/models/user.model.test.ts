@@ -118,3 +118,43 @@ describe("userModel", () => {
     expect(await userModel(testDb.db).countActiveGestores()).toBe(1);
   });
 });
+
+describe("userModel rodízio", () => {
+  const at = (minute: number) => new Date(`2026-11-17T12:${String(minute).padStart(2, "0")}:00Z`);
+
+  it("escolhe primeiro quem nunca recebeu, depois quem recebeu há mais tempo", async () => {
+    const recente = await createUser(testDb.db, { lastAssignedAt: at(30) });
+    const antigo = await createUser(testDb.db, { lastAssignedAt: at(10) });
+    const nunca = await createUser(testDb.db);
+    const model = userModel(testDb.db);
+
+    expect((await model.lockNextInRotation())?.id).toBe(nunca.id);
+    await model.markAssigned(nunca.id, at(40));
+    expect((await model.lockNextInRotation())?.id).toBe(antigo.id);
+    await model.markAssigned(antigo.id, at(41));
+    expect((await model.lockNextInRotation())?.id).toBe(recente.id);
+  });
+
+  it("ignora gestor, vendedor inativo/pendente e quem está fora da fila", async () => {
+    await createUser(testDb.db, { role: "GESTOR" });
+    await createUser(testDb.db, { status: "INATIVO" });
+    await createUser(testDb.db, { status: "PENDENTE" });
+    await createUser(testDb.db, { inRotation: false });
+
+    expect(await userModel(testDb.db).lockNextInRotation()).toBeNull();
+  });
+
+  it("lista vendedores ativos na ordem da fila, com quem está fora no fim", async () => {
+    const fora = await createUser(testDb.db, { name: "Fora" });
+    const segundo = await createUser(testDb.db, { name: "Segundo", lastAssignedAt: at(20) });
+    const primeiro = await createUser(testDb.db, { name: "Primeiro", lastAssignedAt: at(5) });
+    await createUser(testDb.db, { role: "GESTOR" });
+    const model = userModel(testDb.db);
+    await model.setInRotation(fora.id, false);
+
+    const list = await model.listRotation();
+
+    expect(list.map((entry) => entry.user.id)).toEqual([primeiro.id, segundo.id, fora.id]);
+    expect(list[0].assignedLeads).toBe(0);
+  });
+});
