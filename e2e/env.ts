@@ -10,3 +10,12 @@ export const MANAGER = {
   email: "gestora@e2e.test",
   password: "senha-da-gestora-e2e",
 };
+
+/** Evolution API de mentira, iniciada pelo próprio teste. */
+export const FAKE_EVOLUTION_PORT = 3199;
+export const EVOLUTION = {
+  url: `http://localhost:${FAKE_EVOLUTION_PORT}`,
+  apiKey: "chave-da-instancia-e2e",
+  instance: "Instancia E2E",
+  webhookSecret: "segredo-do-webhook-e2e-0123456789",
+};

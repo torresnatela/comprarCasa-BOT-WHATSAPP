@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
-import { E2E_BASE_URL, E2E_DATABASE_URL, E2E_PORT } from "./e2e/env";
+import {
+  E2E_BASE_URL,
+  E2E_DATABASE_URL,
+  E2E_PORT,
+  EVOLUTION,
+} from "./e2e/env";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -22,6 +27,10 @@ export default defineConfig({
     env: {
       DATABASE_URL: E2E_DATABASE_URL,
       APP_URL: E2E_BASE_URL,
+      EVOLUTION_API_URL: EVOLUTION.url,
+      EVOLUTION_API_KEY: EVOLUTION.apiKey,
+      EVOLUTION_INSTANCE: EVOLUTION.instance,
+      EVOLUTION_WEBHOOK_SECRET: EVOLUTION.webhookSecret,
     },
   },
 });

@@ -1,18 +1,24 @@
 import "server-only";
 import { createControllers } from "./controllers";
 import { getDb } from "./db/client";
+import { readEvolutionConfig } from "./integrations/evolution/config";
 import { createServices } from "./services";
 import { createPasswordHasher } from "./services/password";
 
 function build() {
+  const whatsapp = readEvolutionConfig(process.env);
+  const appUrl = process.env.APP_URL;
   const services = createServices({
     db: getDb(),
     hasher: createPasswordHasher(),
+    whatsapp,
+    appUrl,
   });
   const controllers = createControllers({
     services,
     secureCookies: process.env.NODE_ENV === "production",
-    appUrl: process.env.APP_URL,
+    whatsapp,
+    appUrl,
   });
   return { services, controllers };
 }

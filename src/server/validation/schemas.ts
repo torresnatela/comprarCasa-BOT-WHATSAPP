@@ -58,3 +58,11 @@ export const idSchema = z.uuid();
 export type LoginInput = z.output<typeof loginSchema>;
 export type CreateCollaboratorInput = z.output<typeof createCollaboratorSchema>;
 export type UpdateCollaboratorInput = z.output<typeof updateCollaboratorSchema>;
+
+export const replySchema = z.object({
+  text: z
+    .string("Escreva a mensagem.")
+    .trim()
+    .min(1, "Escreva a mensagem.")
+    .max(4000, "A mensagem deve ter no máximo 4000 caracteres."),
+});

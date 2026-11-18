@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatPhone, ROLE_LABELS, STATUS_LABELS } from "./format";
+import {
+  formatDateTime,
+  formatPhone,
+  leadTitle,
+  ROLE_LABELS,
+  STATUS_LABELS,
+} from "./format";
 
 describe("formatPhone", () => {
   it.each([
     ["5511988887777", "+55 (11) 98888-7777"],
     ["551133334444", "+55 (11) 3333-4444"],
+    ["351912345678", "+351 912 345 678"],
     ["", "—"],
+    [null, "—"],
     ["447911123456", "+447911123456"],
   ])("formata %j como %j", (input, expected) => {
     expect(formatPhone(input)).toBe(expected);
@@ -28,5 +36,13 @@ describe("formatDateTime", () => {
     expect(formatDateTime("2026-11-24T15:30:00Z", "America/Sao_Paulo")).toBe(
       "24/11/2026 às 12:30",
     );
+  });
+});
+
+describe("leadTitle", () => {
+  it("usa o nome do WhatsApp, depois o telefone, depois um texto neutro", () => {
+    expect(leadTitle({ name: "Maria Silva", phone: "351912345678" })).toBe("Maria Silva");
+    expect(leadTitle({ name: null, phone: "351912345678" })).toBe("+351 912 345 678");
+    expect(leadTitle({ name: null, phone: null })).toBe("Contato sem número");
   });
 });

@@ -21,7 +21,7 @@ export async function createTestDb(): Promise<TestDb> {
   return {
     db: db as unknown as Database,
     reset: async () => {
-      await db.execute(sql`TRUNCATE TABLE invites, sessions, users CASCADE`);
+      await db.execute(sql`TRUNCATE TABLE messages, leads, invites, sessions, users CASCADE`);
     },
     close: () => client.close(),
   };

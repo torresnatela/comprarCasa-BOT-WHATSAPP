@@ -1,4 +1,11 @@
-import { pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { USER_ROLES, USER_STATUSES } from "../../lib/roles";
 
 export { USER_ROLES, USER_STATUSES };
@@ -49,9 +56,52 @@ export const invites = pgTable("invites", {
   createdAt,
 });
 
+export const MESSAGE_DIRECTIONS = ["RECEBIDA", "ENVIADA"] as const;
+export const MESSAGE_TYPES = ["TEXTO", "OUTRO"] as const;
+
+export const messageDirection = pgEnum("message_direction", MESSAGE_DIRECTIONS);
+export const messageType = pgEnum("message_type", MESSAGE_TYPES);
+
+/** Contato que falou com o WhatsApp da imobiliária. Uma conversa por lead. */
+export const leads = pgTable("leads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** Identificador da conversa no WhatsApp; é para ele que as respostas vão. */
+  whatsappJid: text("whatsapp_jid").notNull().unique(),
+  /** Só dígitos, com DDI. Nulo quando o WhatsApp não revela o número. */
+  phone: text("phone"),
+  name: text("name"),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull(),
+  lastMessageText: text("last_message_text").notNull(),
+  createdAt,
+});
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    direction: messageDirection("direction").notNull(),
+    type: messageType("type").notNull(),
+    text: text("text").notNull(),
+    /** Id da mensagem no WhatsApp: impede gravar a mesma mensagem duas vezes. */
+    externalId: text("external_id").notNull().unique(),
+    /** Colaborador que respondeu pelo portal (nulo se veio do celular). */
+    sentBy: uuid("sent_by").references(() => users.id),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+    createdAt,
+  },
+  (table) => [index("messages_lead_sent_at_idx").on(table.leadId, table.sentAt)],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+export type Lead = typeof leads.$inferSelect;
+export type NewLead = typeof leads.$inferInsert;
+export type Message = typeof messages.$inferSelect;
+export type NewMessage = typeof messages.$inferInsert;
 export type Invite = typeof invites.$inferSelect;
 export type NewInvite = typeof invites.$inferInsert;
