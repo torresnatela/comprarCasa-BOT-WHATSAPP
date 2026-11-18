@@ -115,15 +115,14 @@ export function userModel(db: Database) {
 
     /** Vendedores ativos na ordem do rodízio (os fora da fila vêm no fim). */
     async listRotation(): Promise<RotationEntry[]> {
-      const assignedLeads = sql<number>`(
-        SELECT count(*)::int FROM ${leads} WHERE ${leads.assignedTo} = ${users.id}
-      )`;
       const rows = await db
-        .select({ user: users, assignedLeads })
+        .select({ user: users, assignedLeads: count(leads.id) })
         .from(users)
+        .leftJoin(leads, eq(leads.assignedTo, users.id))
         .where(and(eq(users.role, "VENDEDOR"), eq(users.status, "ATIVO")))
+        .groupBy(users.id)
         .orderBy(sql`${users.inRotation} DESC`, ...rotationOrder);
-      return rows.map((row) => ({ ...row, assignedLeads: Number(row.assignedLeads) }));
+      return rows;
     },
 
     async setInRotation(id: string, value: boolean): Promise<User | null> {

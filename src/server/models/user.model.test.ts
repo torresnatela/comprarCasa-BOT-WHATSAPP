@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createUser } from "../../../tests/factories";
+import { createLead, createUser } from "../../../tests/factories";
 import { createTestDb, type TestDb } from "../../../tests/test-db";
 import { ConflictError } from "../http/errors";
 import { userModel } from "./user.model";
@@ -155,6 +155,20 @@ describe("userModel rodízio", () => {
     const list = await model.listRotation();
 
     expect(list.map((entry) => entry.user.id)).toEqual([primeiro.id, segundo.id, fora.id]);
-    expect(list[0].assignedLeads).toBe(0);
+    expect(list.map((entry) => entry.assignedLeads)).toEqual([0, 0, 0]);
+  });
+
+  it("conta os leads que cada vendedor recebeu", async () => {
+    const ana = await createUser(testDb.db, { name: "Ana" });
+    const bruno = await createUser(testDb.db, { name: "Bruno" });
+    await createLead(testDb.db, { assignedTo: ana.id });
+    await createLead(testDb.db, { assignedTo: ana.id });
+    await createLead(testDb.db);
+
+    const counts = Object.fromEntries(
+      (await userModel(testDb.db).listRotation()).map((e) => [e.user.id, e.assignedLeads]),
+    );
+
+    expect(counts).toEqual({ [ana.id]: 2, [bruno.id]: 0 });
   });
 });

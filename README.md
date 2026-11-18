@@ -9,8 +9,9 @@ portal para cadastrar a equipe.
 - Login, papéis de acesso e cadastro de colaboradores com link de convite.
 - Integração com a Evolution API: as mensagens recebidas no WhatsApp viram
   leads, a conversa fica guardada e o gestor responde pelo portal.
-
-Qualificação por IA e rodízio são as [próximas fases](#próximas-fases).
+- Qualificação por IA (Claude Haiku) e rodízio de vendedores: a assistente
+  conversa com o lead novo e o entrega ao próximo vendedor da fila. Veja
+  [Qualificação e rodízio](#qualificação-e-rodízio).
 
 ## Stack
 
@@ -56,6 +57,10 @@ execução. Crie-o uma vez:
 docker compose exec postgres createdb -U comprarcasa comprarcasa_e2e
 ```
 
+O E2E sobe o portal na porta 3100 e reaproveita um servidor que já esteja
+nela. Se você tiver outro `next` rodando ali, use outra porta:
+`E2E_PORT=3110 pnpm test:e2e`.
+
 ## Arquitetura (MVC)
 
 ```
@@ -93,8 +98,8 @@ Convenções:
 
 | Papel | Pode |
 |---|---|
-| **Gestor** | Tudo: colaboradores, links de acesso, leads, conversas e configuração do WhatsApp |
-| **Vendedor** | Entrar no portal e ver os próprios dados (depois: os próprios leads) |
+| **Gestor** | Tudo: colaboradores, links de acesso, leads, conversas, fila do rodízio e configuração do WhatsApp |
+| **Vendedor** | Entrar no portal e ver os próprios dados (depois: os próprios leads). Recebe os leads do rodízio pelo WhatsApp |
 
 - O gestor cadastra o colaborador e recebe um **link de convite** (uso único,
   válido por 7 dias) para enviar. O colaborador abre o link e cria a senha.
@@ -123,6 +128,8 @@ Convenções:
 | `GET /api/leads` | gestor | Leads, do mais recente para o mais antigo |
 | `GET /api/leads/:id` | gestor | Lead e a conversa |
 | `POST /api/leads/:id/mensagens` | gestor | Responde pelo WhatsApp |
+| `GET /api/rodizio` | gestor | Vendedores ativos na ordem da fila |
+| `PATCH /api/rodizio/:id` | gestor | Coloca ou tira o vendedor da fila (`{ inRotation }`) |
 | `GET /api/whatsapp/status` | gestor | Estado da instância e do webhook |
 | `POST /api/whatsapp/webhook` | gestor | Registra o webhook do portal na Evolution |
 | `POST /api/webhooks/evolution` | segredo no cabeçalho | Recebe os eventos da Evolution API |
@@ -174,13 +181,49 @@ O webhook precisa de endereço público com HTTPS, então o recebimento real só
 funciona no deploy (ou com um túnel na máquina de desenvolvimento). Os testes
 usam uma Evolution falsa e não tocam no WhatsApp.
 
+## Qualificação e rodízio
+
+Todo lead novo começa **com a assistente** (etapa `QUALIFICANDO`). A cada
+mensagem dele, o Claude Haiku 5.5 (`claude-haiku-5-5`, o modelo mais barato —
+cerca de US$ 0,002 por lead) responde com uma pergunta curta até entender
+**objetivo e tipo de imóvel, região, faixa de valor/pagamento e prazo**.
+
+Quando tem o suficiente (ou o lead pede uma pessoa), a assistente encerra:
+
+1. O rodízio escolhe o vendedor ativo e **na fila** que recebeu lead há mais
+   tempo (ou nunca recebeu) e o lead fica `DISTRIBUIDO` para ele.
+2. O lead recebe: *"O {primeiro nome do vendedor} vai entrar em contato com
+   você e te ajudar com o que precisa."*
+3. O vendedor recebe no WhatsApp o nome, o número, o resumo da qualificação e
+   o link da conversa no portal.
+
+Sem vendedor na fila, o lead fica `AGUARDANDO_VENDEDOR` e recebe uma mensagem
+genérica. O gestor organiza a fila na tela **Rodízio**.
+
+Regras:
+
+- A IA responde depois do 200 do webhook (`after` do Next), esperando
+  `QUALIFIER_DELAY_MS` (4 s) para juntar mensagens mandadas em sequência; só a
+  mais recente é respondida.
+- Se alguém responde pelo portal, o lead passa para `HUMANO` e a IA para.
+- O lead nunca fica parado: erro ou recusa da IA, `ANTHROPIC_API_KEY` ausente
+  ou 6 perguntas sem concluir levam o lead direto ao rodízio.
+- Leads que já existiam antes desta fase ficaram como `HUMANO`.
+- Limitação: uma resposta digitada direto no celular da imobiliária não tira o
+  lead da assistente (só a resposta pelo portal).
+
+Variáveis: `ANTHROPIC_API_KEY` (obrigatória para a conversa automática),
+`ANTHROPIC_MODEL` e `QUALIFIER_DELAY_MS` (opcionais). Os testes usam uma IA
+falsa e não chamam a API.
+
 ## Deploy na Vercel
 
 1. Importe o repositório na Vercel (preset Next.js).
 2. Em **Storage**, adicione um Postgres (Neon) — ele cria `DATABASE_URL`.
 3. Em **Settings → Environment Variables**, defina `APP_URL` com a URL pública
-   do portal (usada no link de convite e no endereço do webhook) e as quatro
-   variáveis `EVOLUTION_*` descritas em [WhatsApp](#whatsapp-evolution-api).
+   do portal (usada no link de convite e no endereço do webhook), as quatro
+   variáveis `EVOLUTION_*` descritas em [WhatsApp](#whatsapp-evolution-api) e
+   `ANTHROPIC_API_KEY` ([Qualificação e rodízio](#qualificação-e-rodízio)).
 4. Em **Settings → Build & Deployment**, use como Build Command
    `pnpm db:migrate && pnpm build`, para aplicar as migrations a cada deploy.
 5. Crie o primeiro gestor uma única vez, da sua máquina, apontando para o banco
@@ -195,11 +238,8 @@ Vercel e no `.env.local`, nunca no repositório.
 
 ## Próximas fases
 
-1. **Qualificação por IA** — conduzir a conversa e extrair os dados do lead.
-   O ponto de encaixe é `conversationService.receive()`, por onde passa toda
-   mensagem recebida.
-2. **Rodízio** — distribuir os leads entre vendedores ativos e avisá-los pelo
-   WhatsApp; vendedor passa a ver os próprios leads.
+1. **Portal do vendedor** — vendedor vê e responde os próprios leads.
+2. **Atribuição manual** — gestor entrega leads em `AGUARDANDO_VENDEDOR`.
 3. **Mídia** — baixar e exibir imagens, áudios e documentos.
 
 Pendências conhecidas:
