@@ -4,7 +4,7 @@ import type { Database } from "../db/types";
 import { AppError, NotFoundError } from "../http/errors";
 import type { EvolutionClient } from "../integrations/evolution/client";
 import type { IncomingMessage } from "../integrations/evolution/webhook-payload";
-import { type LeadWithNextTask, leadModel } from "../models/lead.model";
+import { type LeadListItem, type LeadWithSeller, leadModel } from "../models/lead.model";
 import { messageModel } from "../models/message.model";
 import { taskModel } from "../models/task.model";
 
@@ -36,9 +36,8 @@ export const whatsappNotConfigured = () =>
 export function createConversationService({ db, evolution }: Deps) {
   return {
     /**
-     * Entrada única de toda mensagem vinda do WhatsApp. É aqui que a
-     * qualificação por IA será ligada: `isNewLead` marca o início da conversa
-     * e a IA só deve responder quando `automationActive` for verdadeiro.
+     * Entrada única de toda mensagem vinda do WhatsApp. Só grava: quem chama
+     * decide se a IA de qualificação deve responder (`automationActive`).
      * Mensagem nova nunca muda a etapa do funil.
      */
     receive(incoming: IncomingMessage): Promise<ReceiveResult> {
@@ -85,14 +84,14 @@ export function createConversationService({ db, evolution }: Deps) {
       });
     },
 
-    listLeads(): Promise<LeadWithNextTask[]> {
+    listLeads(): Promise<LeadListItem[]> {
       return leadModel(db).list();
     },
 
     async getConversation(
       leadId: string,
-    ): Promise<{ lead: Lead; messages: Message[]; tasks: LeadTask[] }> {
-      const lead = await leadModel(db).findById(leadId);
+    ): Promise<{ lead: LeadWithSeller; messages: Message[]; tasks: LeadTask[] }> {
+      const lead = await leadModel(db).findWithSeller(leadId);
       if (!lead) throw new NotFoundError("LEAD_NOT_FOUND", "Lead não encontrado.");
       const [messages, tasks] = await Promise.all([
         messageModel(db).listByLead(leadId),
@@ -127,6 +126,8 @@ export function createConversationService({ db, evolution }: Deps) {
         if (stored) {
           await leadModel(tx).recordActivity(lead.id, { at: sent.sentAt, text });
         }
+        // Um colaborador respondeu: a IA de qualificação para de falar com o lead.
+        await leadModel(tx).moveStage(lead.id, "QUALIFICANDO", "HUMANO");
         return message;
       });
     },

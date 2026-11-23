@@ -42,6 +42,10 @@ createServer((req, res) => {
         messageTimestamp: Math.floor(Date.now() / 1000),
       });
     }
+    // A assistente marca como lida e mostra "a escrever…"; aqui só confirmamos.
+    if (path.startsWith("/chat/markMessageAsRead/") || path.startsWith("/chat/sendPresence/")) {
+      return reply(201, {});
+    }
     if (path.startsWith("/instance/connectionState/")) {
       return reply(200, { instance: { state: "open" } });
     }

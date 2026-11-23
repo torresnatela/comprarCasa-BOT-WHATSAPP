@@ -1,13 +1,28 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
-import { EVOLUTION, MANAGER } from "./env";
+import { EVOLUTION, MANAGER, QUALIFICATION_DONE_WORD } from "./env";
+import { startFakeAnthropic } from "./fake-anthropic";
 import { startFakeEvolution } from "./fake-evolution";
 
 let evolution: Awaited<ReturnType<typeof startFakeEvolution>>;
+let anthropic: Awaited<ReturnType<typeof startFakeAnthropic>>;
 
 test.beforeAll(async () => {
   evolution = await startFakeEvolution();
+  anthropic = await startFakeAnthropic();
 });
-test.afterAll(() => evolution.stop());
+test.afterAll(async () => {
+  await evolution.stop();
+  await anthropic.stop();
+});
+
+/** Textos enviados pela Evolution para um número. */
+const sentTo = (number: string) =>
+  evolution.requests
+    .filter((r) => r.path.startsWith("/message/sendText/"))
+    .filter((r) => (r.body as { number: string }).number === number)
+    .map((r) => (r.body as { text: string }).text);
+
+const BOT_QUESTION = "Legal! Você procura para comprar ou alugar?";
 
 const run = Date.now();
 const phone = `3519${String(run).slice(-8)}`;
@@ -50,7 +65,7 @@ test("o webhook recusa chamadas sem o segredo correto", async ({ request }) => {
   expect(response.status()).toBe(401);
 });
 
-test("mensagem do WhatsApp vira lead; o gestor vê a conversa e responde pelo portal", async ({
+test("mensagem do WhatsApp vira lead; a assistente responde e o gestor assume pelo portal", async ({
   page,
   request,
 }) => {
@@ -60,6 +75,9 @@ test("mensagem do WhatsApp vira lead; o gestor vê a conversa e responde pelo po
   const repeated = await deliver(request, "Olá, vi o anúncio do T2", { id: `E2E-FIRST-${run}` });
   expect(await repeated.json()).toEqual({ ok: true, result: "duplicate" });
 
+  // A assistente responde uma vez só, depois do webhook.
+  await expect.poll(() => sentTo(jid)).toEqual([BOT_QUESTION]);
+
   // O gestor encontra o lead na lista.
   await page.goto("/login");
   await page.getByLabel("E-mail").fill(MANAGER.email);
@@ -67,14 +85,19 @@ test("mensagem do WhatsApp vira lead; o gestor vê a conversa e responde pelo po
   await page.getByRole("button", { name: "Entrar" }).click();
   await page.getByRole("navigation").getByRole("link", { name: "Leads" }).click();
   const leadLink = page.getByRole("link", { name: new RegExp(leadName) });
-  await expect(leadLink).toContainText("Olá, vi o anúncio do T2");
+  await expect(leadLink).toContainText(BOT_QUESTION);
 
-  // Abre a conversa: uma mensagem só, apesar da reentrega.
+  // Abre a conversa: uma mensagem recebida (apesar da reentrega) e a resposta da assistente.
   await leadLink.click();
-  await expect(page.getByRole("heading", { name: leadName })).toBeVisible();
+  const heading = page.getByRole("heading", { name: leadName });
+  await expect(heading).toBeVisible();
+  // A etapa aparece ao lado do nome.
+  const header = heading.locator("..");
+  await expect(header).toContainText("Com a assistente");
   const log = page.getByRole("log", { name: "Conversa" });
-  await expect(log.getByRole("listitem")).toHaveCount(1);
+  await expect(log.getByRole("listitem")).toHaveCount(2);
   await expect(log.getByLabel("Mensagem recebida")).toContainText("Olá, vi o anúncio do T2");
+  await expect(log.getByLabel("Mensagem da assistente")).toContainText(BOT_QUESTION);
 
   // Responde pelo portal: a Evolution recebe o envio com a chave e o destinatário.
   await page.getByLabel("Resposta").fill("Bom dia! Posso mostrar amanhã às 10h.");
@@ -83,19 +106,18 @@ test("mensagem do WhatsApp vira lead; o gestor vê a conversa e responde pelo po
     "Bom dia! Posso mostrar amanhã às 10h.",
   );
   await expect(page.getByLabel("Resposta")).toHaveValue("");
-  const sent = evolution.requests.filter((r) => r.path.startsWith("/message/sendText/"));
-  expect(sent).toEqual([
-    {
-      method: "POST",
-      path: `/message/sendText/${EVOLUTION.instance}`,
-      apikey: EVOLUTION.apiKey,
-      body: { number: jid, text: "Bom dia! Posso mostrar amanhã às 10h." },
-    },
-  ]);
+  expect(evolution.requests.filter((r) => r.path.startsWith("/message/sendText/")).at(-1)).toEqual({
+    method: "POST",
+    path: `/message/sendText/${EVOLUTION.instance}`,
+    apikey: EVOLUTION.apiKey,
+    body: { number: jid, text: "Bom dia! Posso mostrar amanhã às 10h." },
+  });
+  // Com o gestor na conversa, a assistente sai de cena.
+  await expect(header).toContainText("Com a equipe", { timeout: 15_000 });
 
   // Uma nova mensagem do lead aparece sozinha, sem recarregar a página.
   await deliver(request, "Perfeito, combinado!");
-  await expect(log.getByRole("listitem")).toHaveCount(3, { timeout: 15_000 });
+  await expect(log.getByRole("listitem")).toHaveCount(4, { timeout: 15_000 });
   await expect(log.getByLabel("Mensagem recebida").last()).toContainText(
     "Perfeito, combinado!",
   );
@@ -105,6 +127,51 @@ test("mensagem do WhatsApp vira lead; o gestor vê a conversa e responde pelo po
   await expect(page.getByRole("link", { name: new RegExp(leadName) })).toContainText(
     "Perfeito, combinado!",
   );
+});
+
+test("a assistente qualifica o lead e o rodízio entrega ao próximo vendedor", async ({
+  page,
+  request,
+}) => {
+  const buyerPhone = `5511${String(run).slice(-9)}`;
+  const buyerJid = `${buyerPhone}@s.whatsapp.net`;
+  const buyerName = `João E2E ${run}`;
+
+  // O gestor confere quem é o próximo da fila.
+  await page.goto("/login");
+  await page.getByLabel("E-mail").fill(MANAGER.email);
+  await page.getByLabel("Senha").fill(MANAGER.password);
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await page.getByRole("navigation").getByRole("link", { name: "Rodízio" }).click();
+  const queue = page.getByRole("list", { name: "Fila do rodízio" });
+  const next = queue.getByRole("listitem").first();
+  await expect(next).toContainText("próximo");
+  const nextName = (await next.locator("p").first().innerText()).replace("próximo", "").trim();
+  const nextFirstName = nextName.split(/\s+/)[0];
+
+  // Lead conversa com a assistente até ela ter o que precisa.
+  await deliver(request, "Oi, quero um apartamento", { from: buyerJid, name: buyerName });
+  await expect.poll(() => sentTo(buyerJid)).toEqual([BOT_QUESTION]);
+  await deliver(request, `Comprar, em ${QUALIFICATION_DONE_WORD}`, { from: buyerJid, name: buyerName });
+
+  // Mensagem final com o nome do vendedor da vez.
+  await expect
+    .poll(() => sentTo(buyerJid).at(-1))
+    .toBe(
+      `Obrigada pelas informações! ${nextFirstName} vai entrar em contacto consigo e ajudar no que precisar.`,
+    );
+
+  // O lead aparece entregue ao vendedor, com o resumo.
+  await page.getByRole("navigation").getByRole("link", { name: "Leads" }).click();
+  const leadLink = page.getByRole("link", { name: new RegExp(buyerName) });
+  await expect(leadLink).toContainText(nextName);
+  await leadLink.click();
+  await expect(page.getByText(`Quer comprar apartamento em ${QUALIFICATION_DONE_WORD}.`)).toBeVisible();
+
+  // Quem recebeu vai para o fim da fila.
+  await page.getByRole("navigation").getByRole("link", { name: "Rodízio" }).click();
+  await expect(queue.getByRole("listitem").first()).not.toContainText(nextName);
+  await expect(queue.getByRole("listitem").filter({ hasText: nextName })).toContainText("1 lead recebido");
 });
 
 test("o gestor conduz o contato pelo funil: etapa, IA, tarefa e ganho", async ({
@@ -123,17 +190,19 @@ test("o gestor conduz o contato pelo funil: etapa, IA, tarefa e ganho", async ({
   await page.getByRole("button", { name: "Entrar" }).click();
   await page.getByRole("navigation").getByRole("link", { name: "Leads" }).click();
   const leadLink = page.getByRole("link", { name: new RegExp(name) });
-  await expect(leadLink).toContainText("Qualificação");
+  await expect(leadLink).toContainText("Com a assistente");
   await leadLink.click();
 
-  // Pausa e retoma a IA na qualificação.
+  // Pausa e retoma a IA enquanto o contato está com a assistente.
   await page.getByRole("button", { name: "Pausar IA" }).click();
   await page.getByRole("button", { name: "Retomar IA" }).click();
   await expect(page.getByRole("button", { name: "Pausar IA" })).toBeVisible();
 
-  // Passa para atendimento humano: a IA desliga.
-  await page.getByLabel("Etapa", { exact: true }).selectOption("EM_ANDAMENTO");
-  await expect(page.getByText("Desligada fora da Qualificação.")).toBeVisible();
+  // Passa para a equipe: a IA desliga.
+  await page.getByLabel("Etapa", { exact: true }).selectOption("HUMANO");
+  await expect(
+    page.getByText("Desligada: o contato não está com a assistente."),
+  ).toBeVisible();
 
   // Cria uma tarefa vencida e conclui.
   await page.getByLabel("Nova tarefa").fill("Enviar fotos do imóvel");

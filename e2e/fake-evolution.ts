@@ -41,6 +41,9 @@ export async function startFakeEvolution() {
           messageTimestamp: Math.floor(Date.now() / 1000),
         });
       }
+      if (path.startsWith("/chat/markMessageAsRead/") || path.startsWith("/chat/sendPresence/")) {
+        return reply(201, {});
+      }
       if (path.startsWith("/instance/connectionState/")) {
         return reply(200, { instance: { state: "open" } });
       }

@@ -7,6 +7,7 @@ import {
   isClosedStage,
   LEAD_STAGES,
   type LeadStage,
+  MANUAL_STAGES,
   LOST_REASON_LABELS,
   STAGE_LABELS,
 } from "@/lib/funnel";
@@ -52,7 +53,11 @@ export function LeadFunnelPanel({ lead, tasks, onLeadChange, onTasksChange }: Pr
     else void patch("etapa", { stage });
   }
 
-  const inQualification = lead.stage === "QUALIFICACAO";
+  const inQualification = lead.stage === "QUALIFICANDO";
+  // Etapas do rodízio só aparecem quando já são a atual.
+  const options = LEAD_STAGES.filter(
+    (stage) => MANUAL_STAGES.includes(stage) || stage === lead.stage,
+  );
 
   return (
     <aside
@@ -67,7 +72,7 @@ export function LeadFunnelPanel({ lead, tasks, onLeadChange, onTasksChange }: Pr
         disabled={busy}
         onChange={(event) => onStageChange(event.target.value as LeadStage)}
       >
-        {LEAD_STAGES.map((stage) => (
+        {options.map((stage) => (
           <option key={stage} value={stage}>
             {STAGE_LABELS[stage]}
           </option>
@@ -112,7 +117,7 @@ export function LeadFunnelPanel({ lead, tasks, onLeadChange, onTasksChange }: Pr
           <p className="text-sm text-gray-600">
             {isClosedStage(lead.stage)
               ? "Desligada: contato fechado."
-              : "Desligada fora da Qualificação."}
+              : "Desligada: o contato não está com a assistente."}
           </p>
         )}
       </div>

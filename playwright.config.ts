@@ -4,6 +4,7 @@ import {
   E2E_DATABASE_URL,
   E2E_PORT,
   EVOLUTION,
+  FAKE_ANTHROPIC_PORT,
 } from "./e2e/env";
 
 export default defineConfig({
@@ -31,6 +32,9 @@ export default defineConfig({
       EVOLUTION_API_KEY: EVOLUTION.apiKey,
       EVOLUTION_INSTANCE: EVOLUTION.instance,
       EVOLUTION_WEBHOOK_SECRET: EVOLUTION.webhookSecret,
+      ANTHROPIC_API_KEY: "chave-anthropic-e2e",
+      ANTHROPIC_BASE_URL: `http://localhost:${FAKE_ANTHROPIC_PORT}`,
+      QUALIFIER_DELAY_MS: "300",
     },
   },
 });

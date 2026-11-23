@@ -1,18 +1,29 @@
 import { type LeadStage, STAGE_LABELS } from "@/lib/funnel";
 import { dueStatus } from "@/lib/format";
 
-const stageStyles: Record<LeadStage, string> = {
-  QUALIFICACAO: "bg-sky-50 text-sky-800 ring-sky-200",
-  EM_ANDAMENTO: "bg-amber-50 text-amber-800 ring-amber-200",
+const STAGE_STYLES: Record<LeadStage, string> = {
+  QUALIFICANDO: "bg-violet-50 text-violet-700 ring-violet-200",
+  AGUARDANDO_VENDEDOR: "bg-amber-50 text-amber-800 ring-amber-200",
+  DISTRIBUIDO: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  HUMANO: "bg-sky-50 text-sky-800 ring-sky-200",
   PARADO: "bg-gray-100 text-gray-700 ring-gray-200",
   GANHO: "bg-brand-50 text-brand-700 ring-brand-100",
   PERDIDO: "bg-red-50 text-red-700 ring-red-200",
 };
 
-const pill = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset";
+const pill =
+  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset";
 
-export function StageBadge({ stage }: { stage: LeadStage }) {
-  return <span className={`${pill} ${stageStyles[stage]}`}>{STAGE_LABELS[stage]}</span>;
+/** Etapa do lead; quando já foi distribuído, mostra o nome do vendedor. */
+export function StageBadge({
+  stage,
+  seller,
+}: {
+  stage: LeadStage;
+  seller?: { name: string } | null;
+}) {
+  const label = stage === "DISTRIBUIDO" && seller ? seller.name : STAGE_LABELS[stage];
+  return <span className={`${pill} ${STAGE_STYLES[stage]}`}>{label}</span>;
 }
 
 export function PausedBadge() {

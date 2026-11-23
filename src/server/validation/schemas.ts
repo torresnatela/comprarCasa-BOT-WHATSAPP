@@ -67,6 +67,9 @@ export const replySchema = z.object({
     .max(4000, "A mensagem deve ter no máximo 4000 caracteres."),
 });
 
+export const rotationUpdateSchema = z.object({
+  inRotation: z.boolean("Valor inválido."),
+});
 const optionalText = (max: number, label: string) =>
   z
     .string()
@@ -79,7 +82,7 @@ const optionalText = (max: number, label: string) =>
 export const changeStageSchema = z.discriminatedUnion(
   "stage",
   [
-    z.object({ stage: z.enum(["QUALIFICACAO", "EM_ANDAMENTO", "PARADO"]) }),
+    z.object({ stage: z.enum(["QUALIFICANDO", "HUMANO", "PARADO"]) }),
     z.object({
       stage: z.literal("GANHO"),
       wonType: z.enum(DEAL_TYPES, "Informe se foi compra ou aluguel."),

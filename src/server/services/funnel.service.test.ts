@@ -20,22 +20,22 @@ describe("funnelService.changeStage", () => {
   it("lead novo começa em Qualificação com a IA ativa", async () => {
     const lead = await createLead(testDb.db);
 
-    expect(lead).toMatchObject({ stage: "QUALIFICACAO", automationPaused: false });
+    expect(lead).toMatchObject({ stage: "QUALIFICANDO", automationPaused: false });
   });
 
   it("sair da Qualificação pausa a IA e voltar não religa", async () => {
     const funnel = setup();
     const lead = await createLead(testDb.db);
 
-    const moved = await funnel.changeStage(lead.id, { stage: "EM_ANDAMENTO" });
+    const moved = await funnel.changeStage(lead.id, { stage: "HUMANO" });
     expect(moved).toMatchObject({
-      stage: "EM_ANDAMENTO",
+      stage: "HUMANO",
       automationPaused: true,
       stageChangedAt: NOW,
     });
 
-    const back = await funnel.changeStage(lead.id, { stage: "QUALIFICACAO" });
-    expect(back).toMatchObject({ stage: "QUALIFICACAO", automationPaused: true });
+    const back = await funnel.changeStage(lead.id, { stage: "QUALIFICANDO" });
+    expect(back).toMatchObject({ stage: "QUALIFICANDO", automationPaused: true });
   });
 
   it("guarda os dados do Ganho", async () => {
@@ -72,9 +72,9 @@ describe("funnelService.changeStage", () => {
       lostReason: "PRECO", lostNote: "Achou caro", wonType: null, wonValue: null,
     });
 
-    const reopened = await funnel.changeStage(lead.id, { stage: "EM_ANDAMENTO" });
+    const reopened = await funnel.changeStage(lead.id, { stage: "HUMANO" });
     expect(reopened).toMatchObject({
-      stage: "EM_ANDAMENTO", lostReason: null, lostNote: null, automationPaused: true,
+      stage: "HUMANO", lostReason: null, lostNote: null, automationPaused: true,
     });
   });
 

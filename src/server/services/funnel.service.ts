@@ -35,7 +35,8 @@ export function createFunnelService({ db, now = () => new Date() }: Deps) {
 
   return {
     /**
-     * Fora da qualificação a IA para; voltar para ela não religa sozinho.
+     * Fora da etapa com a assistente a IA para; voltar para ela não religa
+     * sozinho.
      * Os dados de Ganho/Perdido só existem enquanto o contato está fechado.
      */
     changeStage(leadId: string, input: ChangeStageInput): Promise<Lead> {
@@ -51,24 +52,26 @@ export function createFunnelService({ db, now = () => new Date() }: Deps) {
             ? { ...NO_OUTCOME, lostReason: input.lostReason, lostNote: input.lostNote }
             : NO_OUTCOME;
 
+      // Mudança manual sempre pausa a IA: voltar para a assistente exige
+      // clicar em "Retomar IA".
       return update(leadId, {
         ...outcome,
         stage: input.stage,
         stageChangedAt: now(),
-        ...(input.stage !== "QUALIFICACAO" && { automationPaused: true }),
+        automationPaused: true,
       });
     },
 
     async setAutomation(leadId: string, paused: boolean): Promise<Lead> {
       if (!paused) {
         const lead = await requireLead(leadId);
-        if (lead.stage !== "QUALIFICACAO") {
+        if (lead.stage !== "QUALIFICANDO") {
           throw new AppError(
             409,
             "AUTOMATION_OUTSIDE_QUALIFICATION",
             isClosedStage(lead.stage)
-              ? "Contato fechado. Reabra e volte para Qualificação para religar a IA."
-              : "Volte o contato para Qualificação para religar a IA.",
+              ? "Contato fechado. Reabra e volte para a assistente para religar a IA."
+              : "Volte o contato para a assistente para religar a IA.",
           );
         }
       }

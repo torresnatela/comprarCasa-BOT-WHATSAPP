@@ -5,13 +5,14 @@ import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 
 import { api, errorMessage } from "@/lib/api";
 import { formatDateTime, formatPhone, leadTitle } from "@/lib/format";
 import { usePolling } from "@/lib/use-polling";
+import { isAutomationActive } from "@/lib/funnel";
 import type {
   PublicLead,
   PublicMessage,
   PublicTask,
 } from "@/server/controllers/presenters";
-import { StageBadge } from "./funnel-badges";
 import { LeadFunnelPanel } from "./lead-funnel-panel";
+import { StageBadge } from "./lead-stage";
 import { Alert, Button } from "./ui";
 
 const REFRESH_MS = 5_000;
@@ -105,12 +106,33 @@ export function ConversationView({ leadId }: { leadId: string }) {
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold text-gray-900">{leadTitle(lead)}</h1>
-          <StageBadge stage={lead.stage} />
+          <StageBadge stage={lead.stage} seller={lead.seller} />
         </div>
         {lead.name && lead.phone && (
           <p className="text-sm text-gray-600">{formatPhone(lead.phone)}</p>
         )}
       </div>
+
+      {lead.qualificationSummary && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-gray-900">Resumo da qualificação</h2>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">
+            {lead.qualificationSummary}
+          </p>
+          {lead.seller && lead.assignedAt && (
+            <p className="mt-2 text-xs text-gray-500">
+              Entregue a {lead.seller.name} em {formatDateTime(lead.assignedAt)}
+            </p>
+          )}
+        </div>
+      )}
+
+      {isAutomationActive(lead) && (
+        <p className="rounded-lg bg-violet-50 px-4 py-3 text-sm text-violet-800">
+          A assistente virtual está conversando com este lead. Se você responder por
+          aqui, ela para e a conversa fica com você.
+        </p>
+      )}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="rounded-xl border border-gray-200 bg-white">
@@ -121,16 +143,24 @@ export function ConversationView({ leadId }: { leadId: string }) {
           >
             {messages.map((message) => {
               const outgoing = message.direction === "ENVIADA";
+              const label = message.sentByBot
+                ? "Mensagem da assistente"
+                : outgoing
+                  ? "Mensagem enviada"
+                  : "Mensagem recebida";
               return (
                 <li
                   key={message.id}
-                  aria-label={outgoing ? "Mensagem enviada" : "Mensagem recebida"}
+                  aria-label={label}
                   className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${
                     outgoing
                       ? "self-end bg-brand-100 text-gray-900"
                       : "self-start bg-gray-100 text-gray-900"
                   }`}
                 >
+                  {message.sentByBot && (
+                    <p className="mb-0.5 text-[11px] font-medium text-violet-700">Assistente</p>
+                  )}
                   <p className="whitespace-pre-wrap break-words">{message.text}</p>
                   <p className="mt-1 text-right text-[11px] text-gray-500">
                     {formatDateTime(message.sentAt)}

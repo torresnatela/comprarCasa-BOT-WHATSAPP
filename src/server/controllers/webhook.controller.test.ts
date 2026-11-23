@@ -3,6 +3,7 @@ import { createTestApp, WEBHOOK_SECRET } from "../../../tests/app";
 import { upsertPayload } from "../../../tests/evolution-fixtures";
 import { createTestDb, type TestDb } from "../../../tests/test-db";
 import { WEBHOOK_SECRET_HEADER } from "../integrations/evolution/client";
+import { leadModel } from "../models/lead.model";
 
 let testDb: TestDb;
 
@@ -116,5 +117,60 @@ describe("POST /api/webhooks/evolution", () => {
     const response = await controllers.webhook.receive(webhookRequest(upsertPayload()));
 
     expect(await response.text()).not.toContain("token-da-instancia");
+  });
+});
+
+describe("POST /api/webhooks/evolution — qualificação por IA", () => {
+  it("responde 200 antes da IA e a IA responde o lead novo depois", async () => {
+    const { controllers, evolution, ai, settle } = createTestApp(testDb.db);
+    ai.script.push({ reply: "Oi, Maria! Você procura para comprar ou alugar?" });
+
+    const response = await controllers.webhook.receive(webhookRequest(upsertPayload()));
+
+    expect(await response.json()).toEqual({ ok: true, result: "stored" });
+    expect(evolution.sent).toEqual([]);
+    await settle();
+    expect(evolution.sent).toEqual([
+      {
+        to: "351912345678@s.whatsapp.net",
+        text: "Oi, Maria! Você procura para comprar ou alugar?",
+      },
+    ]);
+  });
+
+  it("não agenda a IA para duplicatas, mensagens enviadas ou leads com humano", async () => {
+    const { controllers, services, ai, settle } = createTestApp(testDb.db);
+    ai.script.push({ reply: "primeira" });
+    await controllers.webhook.receive(webhookRequest(upsertPayload()));
+    await settle();
+
+    await controllers.webhook.receive(webhookRequest(upsertPayload()));
+    await controllers.webhook.receive(
+      webhookRequest(upsertPayload({ id: "ENVIADA-1", fromMe: true, message: { conversation: "do celular" } })),
+    );
+    const [lead] = await services.conversations.listLeads();
+    await leadModel(testDb.db).moveStage(lead.id, "QUALIFICANDO", "HUMANO");
+    await controllers.webhook.receive(
+      webhookRequest(upsertPayload({ id: "OUTRA-1", message: { conversation: "alguém aí?" } })),
+    );
+    await settle();
+
+    expect(ai.calls).toHaveLength(1);
+  });
+
+  it("não agenda a IA quando o gestor a pausou", async () => {
+    const { controllers, services, ai, settle } = createTestApp(testDb.db);
+    ai.script.push({ reply: "primeira" });
+    await controllers.webhook.receive(webhookRequest(upsertPayload()));
+    await settle();
+    const [lead] = await services.conversations.listLeads();
+    await services.funnel.setAutomation(lead.id, true);
+
+    await controllers.webhook.receive(
+      webhookRequest(upsertPayload({ id: "OUTRA-1", message: { conversation: "alguém aí?" } })),
+    );
+    await settle();
+
+    expect(ai.calls).toHaveLength(1);
   });
 });

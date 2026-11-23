@@ -13,7 +13,11 @@ const maria = {
   phone: "351912345678",
   lastMessageAt: "2026-11-17T12:00:00.000Z",
   lastMessageText: "Ainda está disponível?",
-  stage: "QUALIFICACAO",
+  stage: "HUMANO",
+  seller: null,
+  assignedAt: null,
+  qualification: null,
+  qualificationSummary: null,
   automationPaused: false,
   stageChangedAt: "2026-11-17T12:00:00.000Z",
   won: null,
@@ -27,6 +31,10 @@ const semNome = {
   lastMessageAt: "2026-11-16T09:00:00.000Z",
   lastMessageText: "[imagem]",
   stage: "PERDIDO",
+  seller: null,
+  assignedAt: null,
+  qualification: null,
+  qualificationSummary: null,
   automationPaused: true,
   stageChangedAt: "2026-11-17T12:00:00.000Z",
   won: null,
@@ -55,6 +63,7 @@ describe("LeadsView", () => {
       ...maria,
       id: "l3",
       name: "João",
+      stage: "QUALIFICANDO",
       automationPaused: true,
       nextTaskDue: "2020-01-01",
     };
@@ -97,5 +106,28 @@ describe("LeadsView", () => {
     await user.click(screen.getByRole("button", { name: "Tentar de novo" }));
 
     expect(await screen.findByRole("link", { name: /Maria Silva/ })).toBeInTheDocument();
+  });
+});
+
+describe("LeadsView — etapas", () => {
+  it("mostra se o lead está com a assistente ou com qual vendedor", async () => {
+    mockApi({
+      "GET /api/leads": {
+        body: {
+          leads: [
+            { ...maria, stage: "DISTRIBUIDO", seller: { id: "u1", name: "Carlos Pereira" } },
+            { ...semNome, stage: "QUALIFICANDO" },
+          ],
+        },
+      },
+    });
+    render(<LeadsView />);
+
+    expect(
+      within(await screen.findByRole("link", { name: /Maria Silva/ })).getByText("Carlos Pereira"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("link", { name: /\+351 933 333 333/ })).getByText("Com a assistente"),
+    ).toBeInTheDocument();
   });
 });

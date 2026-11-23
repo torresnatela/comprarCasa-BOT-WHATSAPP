@@ -7,7 +7,7 @@ import { LEAD_STAGES, type LeadStage, STAGE_LABELS } from "@/lib/funnel";
 import { formatDateTime, formatPhone, leadTitle } from "@/lib/format";
 import { usePolling } from "@/lib/use-polling";
 import type { PublicLead } from "@/server/controllers/presenters";
-import { PausedBadge, StageBadge, TaskDueBadge } from "./funnel-badges";
+import { PausedBadge, StageBadge, TaskDueBadge } from "./lead-stage";
 import { Alert, Button } from "./ui";
 
 const REFRESH_MS = 10_000;
@@ -152,8 +152,8 @@ function LeadList({ leads }: { leads: PublicLead[] }) {
               <p className="truncate font-medium text-gray-900">{leadTitle(lead)}</p>
               <p className="truncate text-sm text-gray-600">{lead.lastMessageText}</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <StageBadge stage={lead.stage} />
-                {lead.stage === "QUALIFICACAO" && lead.automationPaused && <PausedBadge />}
+                <StageBadge stage={lead.stage} seller={lead.seller} />
+                {lead.stage === "QUALIFICANDO" && lead.automationPaused && <PausedBadge />}
                 <TaskDueBadge due={lead.nextTaskDue} />
               </div>
             </div>

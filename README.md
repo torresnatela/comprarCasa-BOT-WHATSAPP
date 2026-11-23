@@ -9,10 +9,11 @@ portal para cadastrar a equipe.
 - Login, papéis de acesso e cadastro de colaboradores com link de convite.
 - Integração com a Evolution API: as mensagens recebidas no WhatsApp viram
   leads, a conversa fica guardada e o gestor responde pelo portal.
+- Qualificação por IA (Claude Sonnet) e rodízio de vendedores: a assistente
+  conversa com o lead novo e o entrega ao próximo vendedor da fila. Veja
+  [Qualificação e rodízio](#qualificação-e-rodízio).
 - Funil simples por contato (mini-CRM): etapa, pausa da IA, tarefas e
   desfecho (ganho ou perdido). Veja [Funil](#funil-do-contato).
-
-Qualificação por IA e rodízio são as [próximas fases](#próximas-fases).
 
 ## Stack
 
@@ -58,6 +59,10 @@ execução. Crie-o uma vez:
 docker compose exec postgres createdb -U comprarcasa comprarcasa_e2e
 ```
 
+O E2E sobe o portal na porta 3100 e reaproveita um servidor que já esteja
+nela. Se você tiver outro `next` rodando ali, use outra porta:
+`E2E_PORT=3110 pnpm test:e2e`.
+
 ## Arquitetura (MVC)
 
 ```
@@ -95,8 +100,8 @@ Convenções:
 
 | Papel | Pode |
 |---|---|
-| **Gestor** | Tudo: colaboradores, links de acesso, leads, conversas e configuração do WhatsApp |
-| **Vendedor** | Entrar no portal e ver os próprios dados (depois: os próprios leads) |
+| **Gestor** | Tudo: colaboradores, links de acesso, leads, conversas, fila do rodízio e configuração do WhatsApp |
+| **Vendedor** | Entrar no portal e ver os próprios dados (depois: os próprios leads). Recebe os leads do rodízio pelo WhatsApp |
 
 - O gestor cadastra o colaborador e recebe um **link de convite** (uso único,
   válido por 7 dias) para enviar. O colaborador abre o link e cria a senha.
@@ -130,6 +135,8 @@ Convenções:
 | `POST /api/leads/:id/tarefas` | gestor | Cria tarefa (`{ title, dueDate }`) |
 | `PATCH /api/leads/:id/tarefas/:tarefaId` | gestor | Marca como feita ou não (`{ done }`) |
 | `DELETE /api/leads/:id/tarefas/:tarefaId` | gestor | Exclui a tarefa |
+| `GET /api/rodizio` | gestor | Vendedores ativos na ordem da fila |
+| `PATCH /api/rodizio/:id` | gestor | Coloca ou tira o vendedor da fila (`{ inRotation }`) |
 | `GET /api/whatsapp/status` | gestor | Estado da instância e do webhook |
 | `POST /api/whatsapp/webhook` | gestor | Registra o webhook do portal na Evolution |
 | `POST /api/webhooks/evolution` | segredo no cabeçalho | Recebe os eventos da Evolution API |
@@ -207,40 +214,86 @@ pnpm tsx --env-file-if-exists=.env.local scripts/demo-whatsapp.ts
 Rodar a demo de novo não duplica os exemplos. O botão "Registrar webhook"
 recusa `localhost` de propósito; ele só funciona com a URL HTTPS do deploy.
 
-## Funil do contato
+## Qualificação e rodízio
 
-Cada contato tem uma etapa. A IA cuida só da primeira; daí em diante é a equipe.
+Todo lead novo começa **com a assistente** (etapa `QUALIFICANDO`). A cada
+mensagem dele, o Claude Sonnet 5.5 (`claude-sonnet-5-5`, cerca de US$ 0,04 por
+lead; com `ANTHROPIC_MODEL=claude-haiku-5-5` sai uns 20x mais barato) responde com uma pergunta curta até entender
+**objetivo e tipo de imóvel, região, faixa de valor/pagamento e prazo**.
 
-| Etapa | Quem conduz |
-|---|---|
-| **Qualificação** | IA (se não estiver pausada) |
-| **Em andamento** | Equipe |
-| **Parado** | Equipe — contato esfriou |
-| **Ganho** | Fechado: compra ou aluguel, valor e condições |
-| **Perdido** | Fechado: motivo (preço, comprou com outro, desistiu, sem resposta, sem crédito, outro) e observação |
+Quando tem o suficiente (ou o lead pede uma pessoa), a assistente encerra:
+
+1. O rodízio escolhe o vendedor ativo e **na fila** que recebeu lead há mais
+   tempo (ou nunca recebeu) e o lead fica `DISTRIBUIDO` para ele.
+2. O lead recebe: *"{primeiro nome do vendedor} vai entrar em contacto
+   consigo e ajudar no que precisar."*
+3. O vendedor recebe no WhatsApp o nome, o número, o resumo da qualificação e
+   o link da conversa no portal.
+
+Sem vendedor na fila, o lead fica `AGUARDANDO_VENDEDOR` e recebe uma mensagem
+genérica. O gestor organiza a fila na tela **Rodízio**.
 
 Regras:
 
-- Lead novo nasce em Qualificação, com a IA ativa.
-- A IA só responde quando a etapa é Qualificação **e** ela não foi pausada
-  (`isAutomationActive` em `src/lib/funnel.ts`; `receive()` devolve
-  `automationActive`).
-- Sair da Qualificação pausa a IA. Voltar para ela não religa sozinho: o
-  gestor clica em **Retomar IA**, que só funciona na Qualificação.
+- A assistente escreve sempre em **português de Portugal**.
+- Como uma pessoa: marca as mensagens como lidas, mostra "a escrever…" enquanto
+  pensa e antes de enviar (2 a 7 s, conforme o tamanho do texto).
+- A IA responde depois do 200 do webhook (`after` do Next), esperando
+  `QUALIFIER_DELAY_MS` (4 s) para juntar mensagens mandadas em sequência; só a
+  mais recente é respondida.
+- Se alguém responde pelo portal, o lead passa para `HUMANO` e a IA para. O
+  gestor também pode pausar a IA na tela da conversa (veja
+  [Funil](#funil-do-contato)).
+- O lead nunca fica parado: erro ou recusa da IA, `ANTHROPIC_API_KEY` ausente
+  ou 6 perguntas sem concluir levam o lead direto ao rodízio.
+- Leads que já existiam antes desta fase ficaram como `HUMANO`.
+- Limitação: uma resposta digitada direto no celular da imobiliária não tira o
+  lead da assistente (só a resposta pelo portal).
+
+Variáveis: `ANTHROPIC_API_KEY` (obrigatória para a conversa automática),
+`ANTHROPIC_MODEL` e `QUALIFIER_DELAY_MS` (opcionais). Os testes usam uma IA
+falsa e não chamam a API.
+
+## Funil do contato
+
+Um mini-CRM por contato: uma única etapa, a pausa da IA, tarefas e o
+desfecho. A IA cuida só da primeira etapa; o resto é da equipe.
+
+| Etapa | Quem conduz | Como chega lá |
+|---|---|---|
+| **Com a assistente** (`QUALIFICANDO`) | IA, se não estiver pausada | Lead novo, ou o gestor volta o contato |
+| **Aguardando vendedor** | Gestor | Fim da qualificação sem vendedor na fila |
+| **Com vendedor** (`DISTRIBUIDO`) | Vendedor | Fim da qualificação, pelo rodízio |
+| **Com a equipe** (`HUMANO`) | Equipe | Resposta pelo portal, ou o gestor escolhe |
+| **Parado** | Equipe — contato esfriou | O gestor escolhe |
+| **Ganho** | Fechado: compra ou aluguel, valor e condições | O gestor escolhe |
+| **Perdido** | Fechado: motivo (preço, comprou com outro, desistiu, sem resposta, sem crédito, outro) e observação | O gestor escolhe |
+
+Regras:
+
+- A IA só responde quando o contato está com a assistente **e** ela não foi
+  pausada (`isAutomationActive` em `src/lib/funnel.ts`; `receive()` devolve
+  `automationActive`, que o webhook usa para chamar a qualificação).
+- **Pausar IA / Retomar IA** só existe com o contato na assistente. Toda
+  mudança manual de etapa pausa a IA; voltar para a assistente não a religa
+  sozinho — é preciso clicar em **Retomar IA**.
+- Aguardando vendedor e Com vendedor dependem do rodízio: não aparecem no
+  seletor de etapa (a não ser como a etapa atual). Mudar a etapa mantém o
+  vendedor que recebeu o lead.
 - Ganho exige tipo e valor; Perdido exige motivo (e observação, se o motivo
   for "Outro"). Reabrir um contato fechado apaga esses dados.
 - Mensagem nova nunca muda a etapa: um contato Ganho, Perdido ou Parado que
   volta a escrever continua onde está até alguém mudar.
 - Tarefas têm título e data. A lista de leads avisa quando há tarefa vencida
-  ou para hoje.
-
+  ou para hoje, e tem abas por etapa.
 ## Deploy na Vercel
 
 1. Importe o repositório na Vercel (preset Next.js).
 2. Em **Storage**, adicione um Postgres (Neon) — ele cria `DATABASE_URL`.
 3. Em **Settings → Environment Variables**, defina `APP_URL` com a URL pública
-   do portal (usada no link de convite e no endereço do webhook) e as quatro
-   variáveis `EVOLUTION_*` descritas em [WhatsApp](#whatsapp-evolution-api).
+   do portal (usada no link de convite e no endereço do webhook), as quatro
+   variáveis `EVOLUTION_*` descritas em [WhatsApp](#whatsapp-evolution-api) e
+   `ANTHROPIC_API_KEY` ([Qualificação e rodízio](#qualificação-e-rodízio)).
 4. Em **Settings → Build & Deployment**, use como Build Command
    `pnpm db:migrate && pnpm build`, para aplicar as migrations a cada deploy.
 5. Crie o primeiro gestor uma única vez, da sua máquina, apontando para o banco
@@ -255,13 +308,8 @@ Vercel e no `.env.local`, nunca no repositório.
 
 ## Próximas fases
 
-1. **Qualificação por IA** — conduzir a conversa e extrair os dados do lead.
-   O ponto de encaixe é `conversationService.receive()`, por onde passa toda
-   mensagem recebida; a IA só deve responder quando o resultado trouxer
-   `automationActive: true`. Ao terminar a qualificação, ela pode mover o
-   contato para Em andamento.
-2. **Rodízio** — distribuir os leads entre vendedores ativos e avisá-los pelo
-   WhatsApp; vendedor passa a ver os próprios leads.
+1. **Portal do vendedor** — vendedor vê e responde os próprios leads.
+2. **Atribuição manual** — gestor entrega leads em `AGUARDANDO_VENDEDOR`.
 3. **Mídia** — baixar e exibir imagens, áudios e documentos.
 
 Pendências conhecidas:
