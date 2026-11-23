@@ -9,7 +9,7 @@ portal para cadastrar a equipe.
 - Login, papéis de acesso e cadastro de colaboradores com link de convite.
 - Integração com a Evolution API: as mensagens recebidas no WhatsApp viram
   leads, a conversa fica guardada e o gestor responde pelo portal.
-- Qualificação por IA (Claude Haiku) e rodízio de vendedores: a assistente
+- Qualificação por IA (Claude Sonnet) e rodízio de vendedores: a assistente
   conversa com o lead novo e o entrega ao próximo vendedor da fila. Veja
   [Qualificação e rodízio](#qualificação-e-rodízio).
 
@@ -181,11 +181,37 @@ O webhook precisa de endereço público com HTTPS, então o recebimento real só
 funciona no deploy (ou com um túnel na máquina de desenvolvimento). Os testes
 usam uma Evolution falsa e não tocam no WhatsApp.
 
+### Demonstração local (sem WhatsApp real)
+
+`scripts/demo-whatsapp.ts` sobe uma Evolution falsa em `localhost:3199`,
+entrega ao portal três conversas de exemplo e transforma cada linha digitada
+no terminal numa mensagem recebida (`1 texto` para o contato 1, `novo Nome
+texto` para um contato novo). As respostas enviadas pelo portal aparecem no
+terminal. No `.env.local`, use:
+
+```
+APP_URL=http://localhost:3100
+EVOLUTION_API_URL=http://localhost:3199
+EVOLUTION_INSTANCE=Demo comprarCasa
+EVOLUTION_API_KEY=token-demo-local
+EVOLUTION_WEBHOOK_SECRET=<openssl rand -hex 32>
+```
+
+Depois, em dois terminais:
+
+```bash
+pnpm build && pnpm start --port 3100
+pnpm tsx --env-file-if-exists=.env.local scripts/demo-whatsapp.ts
+```
+
+Rodar a demo de novo não duplica os exemplos. O botão "Registrar webhook"
+recusa `localhost` de propósito; ele só funciona com a URL HTTPS do deploy.
+
 ## Qualificação e rodízio
 
 Todo lead novo começa **com a assistente** (etapa `QUALIFICANDO`). A cada
-mensagem dele, o Claude Haiku 5.5 (`claude-haiku-5-5`, o modelo mais barato —
-cerca de US$ 0,002 por lead) responde com uma pergunta curta até entender
+mensagem dele, o Claude Sonnet 5.5 (`claude-sonnet-5-5`, cerca de US$ 0,04 por
+lead; com `ANTHROPIC_MODEL=claude-haiku-5-5` sai uns 20x mais barato) responde com uma pergunta curta até entender
 **objetivo e tipo de imóvel, região, faixa de valor/pagamento e prazo**.
 
 Quando tem o suficiente (ou o lead pede uma pessoa), a assistente encerra:
