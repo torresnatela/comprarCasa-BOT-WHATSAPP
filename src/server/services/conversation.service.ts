@@ -1,10 +1,12 @@
-import type { Lead, Message, User } from "../db/schema";
+import { isAutomationActive } from "../../lib/funnel";
+import type { Lead, LeadTask, Message, User } from "../db/schema";
 import type { Database } from "../db/types";
 import { AppError, NotFoundError } from "../http/errors";
 import type { EvolutionClient } from "../integrations/evolution/client";
 import type { IncomingMessage } from "../integrations/evolution/webhook-payload";
-import { leadModel } from "../models/lead.model";
+import { type LeadWithNextTask, leadModel } from "../models/lead.model";
 import { messageModel } from "../models/message.model";
+import { taskModel } from "../models/task.model";
 
 type Deps = {
   db: Database;
@@ -13,7 +15,14 @@ type Deps = {
 };
 
 export type ReceiveResult =
-  | { status: "stored"; lead: Lead; message: Message; isNewLead: boolean }
+  | {
+      status: "stored";
+      lead: Lead;
+      message: Message;
+      isNewLead: boolean;
+      /** Se a IA deve responder (etapa Qualificação e não pausada). */
+      automationActive: boolean;
+    }
   | { status: "duplicate" }
   | { status: "ignored" };
 
@@ -28,7 +37,9 @@ export function createConversationService({ db, evolution }: Deps) {
   return {
     /**
      * Entrada única de toda mensagem vinda do WhatsApp. É aqui que a
-     * qualificação por IA será ligada: `isNewLead` marca o início da conversa.
+     * qualificação por IA será ligada: `isNewLead` marca o início da conversa
+     * e a IA só deve responder quando `automationActive` for verdadeiro.
+     * Mensagem nova nunca muda a etapa do funil.
      */
     receive(incoming: IncomingMessage): Promise<ReceiveResult> {
       return db.transaction(async (tx) => {
@@ -63,25 +74,31 @@ export function createConversationService({ db, evolution }: Deps) {
           name: incoming.pushName,
           phone: incoming.phone,
         });
+        const current = updated ?? lead;
         return {
           status: "stored",
-          lead: updated ?? lead,
+          lead: current,
           message,
           isNewLead: created,
+          automationActive: !incoming.fromMe && isAutomationActive(current),
         };
       });
     },
 
-    listLeads(): Promise<Lead[]> {
+    listLeads(): Promise<LeadWithNextTask[]> {
       return leadModel(db).list();
     },
 
     async getConversation(
       leadId: string,
-    ): Promise<{ lead: Lead; messages: Message[] }> {
+    ): Promise<{ lead: Lead; messages: Message[]; tasks: LeadTask[] }> {
       const lead = await leadModel(db).findById(leadId);
       if (!lead) throw new NotFoundError("LEAD_NOT_FOUND", "Lead não encontrado.");
-      return { lead, messages: await messageModel(db).listByLead(leadId) };
+      const [messages, tasks] = await Promise.all([
+        messageModel(db).listByLead(leadId),
+        taskModel(db).listByLead(leadId),
+      ]);
+      return { lead, messages, tasks };
     },
 
     /** Responde pelo WhatsApp. Só grava a mensagem depois que o envio dá certo. */

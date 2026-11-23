@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { USER_ROLES } from "../db/schema";
+import { DEAL_TYPES, LOST_REASONS, USER_ROLES } from "../db/schema";
 
 const email = z
   .string("Informe o e-mail.")
@@ -66,3 +66,57 @@ export const replySchema = z.object({
     .min(1, "Escreva a mensagem.")
     .max(4000, "A mensagem deve ter no máximo 4000 caracteres."),
 });
+
+const optionalText = (max: number, label: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, `${label} deve ter no máximo ${max} caracteres.`)
+    .optional()
+    .transform((value) => value || null);
+
+/** Troca de etapa. Ganho e Perdido pedem os dados do desfecho. */
+export const changeStageSchema = z.discriminatedUnion(
+  "stage",
+  [
+    z.object({ stage: z.enum(["QUALIFICACAO", "EM_ANDAMENTO", "PARADO"]) }),
+    z.object({
+      stage: z.literal("GANHO"),
+      wonType: z.enum(DEAL_TYPES, "Informe se foi compra ou aluguel."),
+      wonValue: z
+        .number("Informe o valor.")
+        .positive("Informe um valor maior que zero.")
+        .max(999_999_999_999, "Valor alto demais."),
+      wonConditions: optionalText(2000, "As condições"),
+    }),
+    z
+      .object({
+        stage: z.literal("PERDIDO"),
+        lostReason: z.enum(LOST_REASONS, "Selecione o motivo."),
+        lostNote: optionalText(2000, "A observação"),
+      })
+      .refine((data) => data.lostReason !== "OUTRO" || data.lostNote, {
+        path: ["lostNote"],
+        message: "Descreva o motivo.",
+      }),
+  ],
+  "Etapa inválida.",
+);
+
+export const automationSchema = z.object({
+  paused: z.boolean("Valor inválido."),
+});
+
+export const createTaskSchema = z.object({
+  title: z
+    .string("Descreva a tarefa.")
+    .trim()
+    .min(1, "Descreva a tarefa.")
+    .max(200, "A tarefa deve ter no máximo 200 caracteres."),
+  dueDate: z.iso.date("Informe a data."),
+});
+
+export const updateTaskSchema = z.object({ done: z.boolean("Valor inválido.") });
+
+export type ChangeStageInput = z.output<typeof changeStageSchema>;
+export type CreateTaskInput = z.output<typeof createTaskSchema>;

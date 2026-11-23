@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createLead, createUser } from "../../../tests/factories";
 import { createFakeEvolution } from "../../../tests/fake-evolution";
 import { createTestDb, type TestDb } from "../../../tests/test-db";
+import { leads } from "../db/schema";
 import { AppError, NotFoundError } from "../http/errors";
 import type { IncomingMessage } from "../integrations/evolution/webhook-payload";
 import { createConversationService } from "./conversation.service";
@@ -52,6 +53,21 @@ describe("conversationService.receive", () => {
       },
       message: { direction: "RECEBIDA", type: "TEXTO", externalId: "MSG-1" },
     });
+  });
+
+  it("indica se a IA deve responder, sem mudar a etapa", async () => {
+    const { service } = setup();
+    const first = await service.receive(incoming());
+    expect(first).toMatchObject({
+      automationActive: true,
+      lead: { stage: "QUALIFICACAO", automationPaused: false },
+    });
+    if (first.status !== "stored") throw new Error("esperava gravar");
+
+    await testDb.db.update(leads).set({ stage: "PERDIDO", automationPaused: true });
+    const later = await service.receive(incoming({ externalId: "MSG-2" }));
+
+    expect(later).toMatchObject({ automationActive: false, lead: { stage: "PERDIDO" } });
   });
 
   it("anexa as mensagens seguintes à mesma conversa", async () => {

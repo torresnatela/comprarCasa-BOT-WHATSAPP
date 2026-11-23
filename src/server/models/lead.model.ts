@@ -1,6 +1,24 @@
-import { desc, eq, sql } from "drizzle-orm";
-import { type Lead, leads, type NewLead } from "../db/schema";
+import { desc, eq, isNull, min, sql } from "drizzle-orm";
+import { type Lead, leads, leadTasks, type NewLead } from "../db/schema";
 import type { Database } from "../db/types";
+
+/** Lead com o vencimento da próxima tarefa aberta (AAAA-MM-DD ou nulo). */
+export type LeadWithNextTask = Lead & { nextTaskDue: string | null };
+
+/** Campos do funil que mudam juntos ao trocar a etapa ou pausar a IA. */
+export type FunnelUpdate = Partial<
+  Pick<
+    Lead,
+    | "stage"
+    | "automationPaused"
+    | "stageChangedAt"
+    | "wonType"
+    | "wonValue"
+    | "wonConditions"
+    | "lostReason"
+    | "lostNote"
+  >
+>;
 
 type Activity = {
   at: Date;
@@ -26,9 +44,29 @@ export function leadModel(db: Database) {
       return lead ?? null;
     },
 
-    /** Leads com conversa mais recente primeiro. */
-    async list(): Promise<Lead[]> {
-      return db.select().from(leads).orderBy(desc(leads.lastMessageAt));
+    /** Leads com conversa mais recente primeiro, com a próxima tarefa aberta. */
+    async list(): Promise<LeadWithNextTask[]> {
+      const nextTasks = db
+        .select({ leadId: leadTasks.leadId, due: min(leadTasks.dueDate).as("due") })
+        .from(leadTasks)
+        .where(isNull(leadTasks.doneAt))
+        .groupBy(leadTasks.leadId)
+        .as("next_tasks");
+      const rows = await db
+        .select({ lead: leads, nextTaskDue: nextTasks.due })
+        .from(leads)
+        .leftJoin(nextTasks, eq(nextTasks.leadId, leads.id))
+        .orderBy(desc(leads.lastMessageAt));
+      return rows.map(({ lead, nextTaskDue }) => ({ ...lead, nextTaskDue }));
+    },
+
+    async updateFunnel(id: string, data: FunnelUpdate): Promise<Lead | null> {
+      const [lead] = await db
+        .update(leads)
+        .set(data)
+        .where(eq(leads.id, id))
+        .returning();
+      return lead ?? null;
     },
 
     /** Seguro contra duas mensagens do mesmo contato chegando ao mesmo tempo. */

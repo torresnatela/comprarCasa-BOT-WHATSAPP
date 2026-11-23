@@ -9,6 +9,8 @@ portal para cadastrar a equipe.
 - Login, papéis de acesso e cadastro de colaboradores com link de convite.
 - Integração com a Evolution API: as mensagens recebidas no WhatsApp viram
   leads, a conversa fica guardada e o gestor responde pelo portal.
+- Funil simples por contato (mini-CRM): etapa, pausa da IA, tarefas e
+  desfecho (ganho ou perdido). Veja [Funil](#funil-do-contato).
 
 Qualificação por IA e rodízio são as [próximas fases](#próximas-fases).
 
@@ -123,6 +125,11 @@ Convenções:
 | `GET /api/leads` | gestor | Leads, do mais recente para o mais antigo |
 | `GET /api/leads/:id` | gestor | Lead e a conversa |
 | `POST /api/leads/:id/mensagens` | gestor | Responde pelo WhatsApp |
+| `PATCH /api/leads/:id/etapa` | gestor | Muda a etapa (Ganho/Perdido com os dados do desfecho) |
+| `PATCH /api/leads/:id/automacao` | gestor | Pausa ou retoma a IA (`{ paused }`) |
+| `POST /api/leads/:id/tarefas` | gestor | Cria tarefa (`{ title, dueDate }`) |
+| `PATCH /api/leads/:id/tarefas/:tarefaId` | gestor | Marca como feita ou não (`{ done }`) |
+| `DELETE /api/leads/:id/tarefas/:tarefaId` | gestor | Exclui a tarefa |
 | `GET /api/whatsapp/status` | gestor | Estado da instância e do webhook |
 | `POST /api/whatsapp/webhook` | gestor | Registra o webhook do portal na Evolution |
 | `POST /api/webhooks/evolution` | segredo no cabeçalho | Recebe os eventos da Evolution API |
@@ -200,6 +207,33 @@ pnpm tsx --env-file-if-exists=.env.local scripts/demo-whatsapp.ts
 Rodar a demo de novo não duplica os exemplos. O botão "Registrar webhook"
 recusa `localhost` de propósito; ele só funciona com a URL HTTPS do deploy.
 
+## Funil do contato
+
+Cada contato tem uma etapa. A IA cuida só da primeira; daí em diante é a equipe.
+
+| Etapa | Quem conduz |
+|---|---|
+| **Qualificação** | IA (se não estiver pausada) |
+| **Em andamento** | Equipe |
+| **Parado** | Equipe — contato esfriou |
+| **Ganho** | Fechado: compra ou aluguel, valor e condições |
+| **Perdido** | Fechado: motivo (preço, comprou com outro, desistiu, sem resposta, sem crédito, outro) e observação |
+
+Regras:
+
+- Lead novo nasce em Qualificação, com a IA ativa.
+- A IA só responde quando a etapa é Qualificação **e** ela não foi pausada
+  (`isAutomationActive` em `src/lib/funnel.ts`; `receive()` devolve
+  `automationActive`).
+- Sair da Qualificação pausa a IA. Voltar para ela não religa sozinho: o
+  gestor clica em **Retomar IA**, que só funciona na Qualificação.
+- Ganho exige tipo e valor; Perdido exige motivo (e observação, se o motivo
+  for "Outro"). Reabrir um contato fechado apaga esses dados.
+- Mensagem nova nunca muda a etapa: um contato Ganho, Perdido ou Parado que
+  volta a escrever continua onde está até alguém mudar.
+- Tarefas têm título e data. A lista de leads avisa quando há tarefa vencida
+  ou para hoje.
+
 ## Deploy na Vercel
 
 1. Importe o repositório na Vercel (preset Next.js).
@@ -223,7 +257,9 @@ Vercel e no `.env.local`, nunca no repositório.
 
 1. **Qualificação por IA** — conduzir a conversa e extrair os dados do lead.
    O ponto de encaixe é `conversationService.receive()`, por onde passa toda
-   mensagem recebida.
+   mensagem recebida; a IA só deve responder quando o resultado trouxer
+   `automationActive: true`. Ao terminar a qualificação, ela pode mover o
+   contato para Em andamento.
 2. **Rodízio** — distribuir os leads entre vendedores ativos e avisá-los pelo
    WhatsApp; vendedor passa a ver os próprios leads.
 3. **Mídia** — baixar e exibir imagens, áudios e documentos.

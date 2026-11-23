@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  dueStatus,
+  formatDate,
   formatDateTime,
+  formatMoney,
   formatPhone,
   leadTitle,
+  todayISO,
   ROLE_LABELS,
   STATUS_LABELS,
 } from "./format";
@@ -44,5 +48,19 @@ describe("leadTitle", () => {
     expect(leadTitle({ name: "Maria Silva", phone: "351912345678" })).toBe("Maria Silva");
     expect(leadTitle({ name: null, phone: "351912345678" })).toBe("+351 912 345 678");
     expect(leadTitle({ name: null, phone: null })).toBe("Contato sem número");
+  });
+});
+
+describe("funil", () => {
+  it("formata dinheiro e data", () => {
+    expect(formatMoney(350000).replace(/\s/g, " ")).toBe("R$ 350.000,00");
+    expect(formatDate("2026-11-05")).toBe("05/11/2026");
+  });
+
+  it("classifica o vencimento em relação a hoje", () => {
+    expect(todayISO(new Date(2026, 0, 9, 23, 30))).toBe("2026-01-09");
+    expect(dueStatus("2026-11-19", "2026-11-20")).toBe("vencida");
+    expect(dueStatus("2026-11-20", "2026-11-20")).toBe("hoje");
+    expect(dueStatus("2026-11-21", "2026-11-20")).toBe("futura");
   });
 });

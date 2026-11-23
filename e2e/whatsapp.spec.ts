@@ -18,7 +18,12 @@ const leadName = `Maria E2E ${run}`;
 function deliver(
   request: APIRequestContext,
   text: string,
-  { secret = EVOLUTION.webhookSecret, id = `E2E-IN-${Math.random()}` } = {},
+  {
+    secret = EVOLUTION.webhookSecret,
+    id = `E2E-IN-${Math.random()}`,
+    from = jid,
+    name = leadName,
+  } = {},
 ) {
   return request.post("/api/webhooks/evolution", {
     headers: { "x-webhook-secret": secret },
@@ -26,8 +31,8 @@ function deliver(
       event: "messages.upsert",
       instance: EVOLUTION.instance,
       data: {
-        key: { remoteJid: jid, fromMe: false, id },
-        pushName: leadName,
+        key: { remoteJid: from, fromMe: false, id },
+        pushName: name,
         message: { conversation: text },
         messageType: "conversation",
         messageTimestamp: Math.floor(Date.now() / 1000),
@@ -100,6 +105,67 @@ test("mensagem do WhatsApp vira lead; o gestor vê a conversa e responde pelo po
   await expect(page.getByRole("link", { name: new RegExp(leadName) })).toContainText(
     "Perfeito, combinado!",
   );
+});
+
+test("o gestor conduz o contato pelo funil: etapa, IA, tarefa e ganho", async ({
+  page,
+  request,
+}) => {
+  const name = `Funil E2E ${run}`;
+  await deliver(request, "Quero alugar um apartamento", {
+    from: `3518${String(run).slice(-8)}@s.whatsapp.net`,
+    name,
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("E-mail").fill(MANAGER.email);
+  await page.getByLabel("Senha").fill(MANAGER.password);
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await page.getByRole("navigation").getByRole("link", { name: "Leads" }).click();
+  const leadLink = page.getByRole("link", { name: new RegExp(name) });
+  await expect(leadLink).toContainText("Qualificação");
+  await leadLink.click();
+
+  // Pausa e retoma a IA na qualificação.
+  await page.getByRole("button", { name: "Pausar IA" }).click();
+  await page.getByRole("button", { name: "Retomar IA" }).click();
+  await expect(page.getByRole("button", { name: "Pausar IA" })).toBeVisible();
+
+  // Passa para atendimento humano: a IA desliga.
+  await page.getByLabel("Etapa", { exact: true }).selectOption("EM_ANDAMENTO");
+  await expect(page.getByText("Desligada fora da Qualificação.")).toBeVisible();
+
+  // Cria uma tarefa vencida e conclui.
+  await page.getByLabel("Nova tarefa").fill("Enviar fotos do imóvel");
+  await page.getByLabel("Data").fill("2020-01-01");
+  await page.getByRole("button", { name: "Adicionar" }).click();
+  const task = page.getByRole("checkbox", { name: "Concluir: Enviar fotos do imóvel" });
+  await expect(task).not.toBeChecked();
+
+  // A lista avisa da tarefa vencida.
+  await page.getByRole("link", { name: "← Leads" }).click();
+  await expect(page.getByRole("link", { name: new RegExp(name) })).toContainText(
+    "Tarefa vencida",
+  );
+  await page.getByRole("link", { name: new RegExp(name) }).click();
+  await page.getByRole("checkbox", { name: "Concluir: Enviar fotos do imóvel" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Concluir: Enviar fotos do imóvel" }),
+  ).toBeChecked();
+
+  // Fecha como ganho com os dados do negócio.
+  await page.getByLabel("Etapa", { exact: true }).selectOption("GANHO");
+  const dialog = page.getByRole("dialog", { name: "Marcar como ganho" });
+  await dialog.getByLabel("Negócio").selectOption("ALUGUEL");
+  await dialog.getByLabel("Valor (R$)").fill("3.500,00");
+  await dialog.getByLabel("Condições (opcional)").fill("Contrato de 30 meses");
+  await dialog.getByRole("button", { name: "Salvar" }).click();
+  await expect(page.getByText(/Aluguel · R\$\s3\.500,00/)).toBeVisible();
+  await expect(page.getByText("Desligada: contato fechado.")).toBeVisible();
+
+  await page.getByRole("link", { name: "← Leads" }).click();
+  await page.getByRole("tab", { name: /^Ganho/ }).click();
+  await expect(page.getByRole("link", { name: new RegExp(name) })).toBeVisible();
 });
 
 test("a tela de WhatsApp mostra a instância conectada e o webhook pendente", async ({

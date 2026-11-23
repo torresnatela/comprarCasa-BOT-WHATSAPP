@@ -47,6 +47,12 @@ describe("GET /api/leads", () => {
       phone: "351912345678",
       lastMessageAt: "2026-11-17T10:00:00.000Z",
       lastMessageText: "Ainda está disponível?",
+      stage: "QUALIFICACAO",
+      automationPaused: false,
+      stageChangedAt: expect.any(String),
+      won: null,
+      lost: null,
+      nextTaskDue: null,
     });
   });
 
@@ -188,5 +194,114 @@ describe("POST /api/leads/[id]/mensagens", () => {
     const lead = await createLead(testDb.db);
     expect((await reply(vendedor, lead.id, { text: "Oi" })).status).toBe(403);
     expect(vendedor.evolution.sent).toEqual([]);
+  });
+});
+
+describe("funil do lead", () => {
+  type App = Awaited<ReturnType<typeof setup>>;
+  const call = (
+    app: App,
+    action: "changeStage" | "setAutomation" | "createTask",
+    leadId: string,
+    body: unknown,
+  ) =>
+    app.controllers.lead[action](
+      apiRequest("PATCH", `/api/leads/${leadId}`, { session: app.session, body }),
+      routeParams({ id: leadId }),
+    );
+
+  it("PATCH etapa marca Ganho com os dados e pausa a IA", async () => {
+    const app = await setup();
+    const lead = await createLead(testDb.db);
+
+    const response = await call(app, "changeStage", lead.id, {
+      stage: "GANHO", wonType: "COMPRA", wonValue: 350000, wonConditions: " À vista ",
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).lead).toMatchObject({
+      stage: "GANHO",
+      automationPaused: true,
+      won: { type: "COMPRA", value: 350000, conditions: "À vista" },
+      lost: null,
+    });
+  });
+
+  it("PATCH etapa valida Ganho e Perdido", async () => {
+    const app = await setup();
+    const lead = await createLead(testDb.db);
+
+    const won = await call(app, "changeStage", lead.id, { stage: "GANHO", wonType: "COMPRA" });
+    const lost = await call(app, "changeStage", lead.id, { stage: "PERDIDO", lostReason: "OUTRO" });
+    const invalid = await call(app, "changeStage", lead.id, { stage: "XYZ" });
+
+    expect(won.status).toBe(400);
+    expect((await won.json()).error.fields.wonValue).toBeDefined();
+    expect(lost.status).toBe(400);
+    expect((await lost.json()).error.fields.lostNote).toBe("Descreva o motivo.");
+    expect(invalid.status).toBe(400);
+  });
+
+  it("PATCH automacao pausa e recusa retomar fora da Qualificação", async () => {
+    const app = await setup();
+    const lead = await createLead(testDb.db);
+
+    const paused = await call(app, "setAutomation", lead.id, { paused: true });
+    expect((await paused.json()).lead.automationPaused).toBe(true);
+
+    await call(app, "changeStage", lead.id, { stage: "PARADO" });
+    const resume = await call(app, "setAutomation", lead.id, { paused: false });
+    expect(resume.status).toBe(409);
+  });
+
+  it("tarefas: cria, aparece na conversa, conclui e exclui", async () => {
+    const app = await setup();
+    const lead = await createLead(testDb.db);
+
+    const created = await call(app, "createTask", lead.id, { title: "Ligar", dueDate: "2026-11-25" });
+    expect(created.status).toBe(201);
+    const { task } = await created.json();
+    expect(task).toEqual({ id: expect.any(String), title: "Ligar", dueDate: "2026-11-25", done: false });
+
+    const show = await app.controllers.lead.show(
+      apiRequest("GET", `/api/leads/${lead.id}`, { session: app.session }),
+      routeParams({ id: lead.id }),
+    );
+    expect((await show.json()).tasks).toEqual([task]);
+
+    const ids = routeParams({ id: lead.id, tarefaId: task.id });
+    const path = `/api/leads/${lead.id}/tarefas/${task.id}`;
+    const done = await app.controllers.lead.updateTask(
+      apiRequest("PATCH", path, { session: app.session, body: { done: true } }),
+      ids,
+    );
+    expect((await done.json()).task.done).toBe(true);
+
+    const removed = await app.controllers.lead.deleteTask(
+      apiRequest("DELETE", path, { session: app.session }),
+      ids,
+    );
+    expect(removed.status).toBe(204);
+    const again = await app.controllers.lead.deleteTask(
+      apiRequest("DELETE", path, { session: app.session }),
+      ids,
+    );
+    expect(again.status).toBe(404);
+  });
+
+  it("tarefa exige título e data; lead inexistente dá 404; vendedor 403", async () => {
+    const app = await setup();
+    const lead = await createLead(testDb.db);
+
+    const invalid = await call(app, "createTask", lead.id, { title: " ", dueDate: "amanhã" });
+    expect(invalid.status).toBe(400);
+    expect(Object.keys((await invalid.json()).error.fields)).toEqual(["title", "dueDate"]);
+    expect(
+      (await call(app, "createTask", MISSING_ID, { title: "A", dueDate: "2026-11-25" })).status,
+    ).toBe(404);
+
+    const seller = await setup("VENDEDOR");
+    expect((await call(seller, "changeStage", lead.id, { stage: "PARADO" })).status).toBe(403);
+    expect((await call(seller, "setAutomation", lead.id, { paused: true })).status).toBe(403);
   });
 });
