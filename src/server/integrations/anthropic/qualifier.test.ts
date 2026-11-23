@@ -88,7 +88,7 @@ const input = {
 };
 
 describe("createLeadQualifier", () => {
-  it("chama o Haiku com saída estruturada, esforço baixo e o contexto do lead", async () => {
+  it("chama o Sonnet com saída estruturada, esforço baixo e o contexto do lead", async () => {
     const { qualifier, sentBody } = setup({ body: apiMessage() });
 
     const result = await qualifier.nextTurn(input);
@@ -96,7 +96,7 @@ describe("createLeadQualifier", () => {
     expect(result).toEqual({ ...turn, summary: null });
     const body = sentBody();
     expect(body).toMatchObject({
-      model: "claude-haiku-5-5",
+      model: "claude-sonnet-5-5",
       output_config: { effort: "low", format: { type: "json_schema" } },
       messages: [{ role: "user", content: "Oi, quero uma casa" }],
     });

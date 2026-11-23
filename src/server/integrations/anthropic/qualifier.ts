@@ -3,8 +3,8 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { Message, Qualification } from "../../db/schema";
 
-/** Barato e rápido: a tarefa é conversa curta + extração de dados. */
-export const DEFAULT_QUALIFIER_MODEL = "claude-haiku-5-5";
+/** Conversa com o cliente e extração de dados: o Sonnet escreve com mais naturalidade que o Haiku. */
+export const DEFAULT_QUALIFIER_MODEL = "claude-sonnet-5-5";
 
 export type QualifierInput = {
   leadName: string | null;

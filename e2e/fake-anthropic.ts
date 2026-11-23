@@ -45,7 +45,7 @@ export async function startFakeAnthropic() {
         id: `msg_e2e_${calls.length}`,
         type: "message",
         role: "assistant",
-        model: "claude-haiku-5-5",
+        model: "claude-sonnet-5-5",
         content: [{ type: "text", text: JSON.stringify(turn) }],
         stop_reason: "end_turn",
         stop_sequence: null,
