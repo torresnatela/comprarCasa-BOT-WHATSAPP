@@ -85,14 +85,20 @@ export function createEvolutionClient({
   return {
     instance,
 
-    /** `to` é o JID guardado no lead; assim a Evolution não reformata o número. */
+    /**
+     * `to` é o JID guardado no lead; assim a Evolution não reformata o número.
+     * Com `typingMs`, o contacto vê "a escrever…" durante esse tempo antes de
+     * a mensagem chegar (a chamada só termina depois do envio).
+     */
     async sendText(
       to: string,
       text: string,
+      { typingMs }: { typingMs?: number } = {},
     ): Promise<{ externalId: string; sentAt: Date }> {
       const data = (await request("POST", "/message/sendText", {
         number: to,
         text,
+        ...(typingMs && typingMs > 0 && { delay: Math.round(typingMs) }),
       })) as { key?: { id?: unknown }; messageTimestamp?: unknown } | null;
 
       const id = data?.key?.id;
@@ -105,6 +111,26 @@ export function createEvolutionClient({
             ? new Date(timestamp * 1000)
             : new Date(),
       };
+    },
+
+    /** Marca mensagens recebidas como lidas (os dois vistos azuis no WhatsApp do contacto). */
+    async markAsRead(messages: { remoteJid: string; id: string }[]): Promise<void> {
+      if (messages.length === 0) return;
+      await request("POST", "/chat/markMessageAsRead", {
+        readMessages: messages.map(({ remoteJid, id }) => ({ remoteJid, id, fromMe: false })),
+      });
+    },
+
+    /**
+     * Mostra "a escrever…" para o contacto. A Evolution só responde depois de
+     * `durationMs`, quando volta ao estado normal.
+     */
+    async showTyping(to: string, durationMs: number): Promise<void> {
+      await request("POST", "/chat/sendPresence", {
+        number: to,
+        presence: "composing",
+        delay: Math.round(durationMs),
+      });
     },
 
     /** `open` significa conectado ao WhatsApp. */

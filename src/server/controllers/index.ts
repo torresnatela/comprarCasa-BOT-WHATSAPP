@@ -5,7 +5,8 @@ import { createAuthController } from "./auth.controller";
 import { createCollaboratorController } from "./collaborator.controller";
 import { createInviteController } from "./invite.controller";
 import { createLeadController } from "./lead.controller";
-import { createWebhookController } from "./webhook.controller";
+import { createRotationController } from "./rotation.controller";
+import { createWebhookController, type Defer } from "./webhook.controller";
 import { createWhatsappController } from "./whatsapp.controller";
 
 type Deps = {
@@ -13,6 +14,8 @@ type Deps = {
   secureCookies: boolean;
   whatsapp: Pick<EvolutionConfig, "webhookSecret" | "instance">;
   appUrl?: string;
+  /** Como agendar a IA depois da resposta do webhook. */
+  defer: Defer;
 };
 
 export function createControllers({
@@ -20,6 +23,7 @@ export function createControllers({
   secureCookies,
   whatsapp,
   appUrl,
+  defer,
 }: Deps) {
   const guard = createGuard(services.auth);
   return {
@@ -32,9 +36,12 @@ export function createControllers({
     }),
     invite: createInviteController({ invites: services.invites, secureCookies }),
     lead: createLeadController({ guard, conversations: services.conversations }),
+    rotation: createRotationController({ guard, rotation: services.rotation }),
     whatsapp: createWhatsappController({ guard, whatsapp: services.whatsapp }),
     webhook: createWebhookController({
       conversations: services.conversations,
+      qualification: services.qualification,
+      defer,
       webhookSecret: whatsapp.webhookSecret,
       instance: whatsapp.instance,
     }),

@@ -143,3 +143,50 @@ describe("evolution client — instância e webhook", () => {
     });
   });
 });
+
+describe("evolution client — leitura e digitação", () => {
+  it("envia com atraso de digitação em milissegundos", async () => {
+    const { client, lastCall } = setup({ status: 201, body: { key: { id: "X" } } });
+
+    await client.sendText("351912345678@s.whatsapp.net", "Olá", { typingMs: 2500.4 });
+
+    expect(lastCall().body).toEqual({
+      number: "351912345678@s.whatsapp.net",
+      text: "Olá",
+      delay: 2500,
+    });
+  });
+
+  it("marca as mensagens recebidas como lidas", async () => {
+    const { client, lastCall } = setup({ status: 201, body: {} });
+
+    await client.markAsRead([{ remoteJid: "351912345678@s.whatsapp.net", id: "3EB0A" }]);
+
+    expect(lastCall()).toMatchObject({
+      url: "https://evolution.exemplo.com/chat/markMessageAsRead/Comprarcasa%20Teste",
+      method: "POST",
+      body: {
+        readMessages: [{ remoteJid: "351912345678@s.whatsapp.net", id: "3EB0A", fromMe: false }],
+      },
+    });
+  });
+
+  it("não chama a API quando não há o que marcar como lido", async () => {
+    const { client, fetchMock } = setup();
+
+    await client.markAsRead([]);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("mostra 'a escrever' pelo tempo pedido", async () => {
+    const { client, lastCall } = setup({ status: 201, body: {} });
+
+    await client.showTyping("351912345678@s.whatsapp.net", 4000);
+
+    expect(lastCall()).toMatchObject({
+      url: "https://evolution.exemplo.com/chat/sendPresence/Comprarcasa%20Teste",
+      body: { number: "351912345678@s.whatsapp.net", presence: "composing", delay: 4000 },
+    });
+  });
+});

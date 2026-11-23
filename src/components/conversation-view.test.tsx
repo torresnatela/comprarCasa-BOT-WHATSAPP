@@ -13,12 +13,18 @@ const lead = {
   phone: "351912345678",
   lastMessageAt: "2026-11-17T12:01:00.000Z",
   lastMessageText: "Bom dia!",
+  stage: "HUMANO",
+  seller: null,
+  assignedAt: null,
+  qualification: null,
+  qualificationSummary: null,
 };
 const received = {
   id: "m1",
   direction: "RECEBIDA",
   type: "TEXTO",
   text: "Olá, vi o anúncio do T2",
+  sentByBot: false,
   sentAt: "2026-11-17T12:00:00.000Z",
 };
 const sent = {
@@ -26,6 +32,7 @@ const sent = {
   direction: "ENVIADA",
   type: "TEXTO",
   text: "Bom dia!",
+  sentByBot: false,
   sentAt: "2026-11-17T12:01:00.000Z",
 };
 const conversation = { body: { lead, messages: [received, sent] } };
@@ -106,5 +113,43 @@ describe("ConversationView", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Lead não encontrado.");
     expect(screen.queryByLabelText("Resposta")).not.toBeInTheDocument();
+  });
+});
+
+describe("ConversationView — qualificação por IA", () => {
+  it("marca as mensagens da assistente e avisa que ela está conduzindo a conversa", async () => {
+    const bot = { ...sent, id: "m3", text: "Você quer comprar ou alugar?", sentByBot: true };
+    mockApi({
+      "GET /api/leads/l1": {
+        body: { lead: { ...lead, stage: "QUALIFICANDO" }, messages: [received, bot] },
+      },
+    });
+    render(<ConversationView leadId="l1" />);
+
+    expect(await screen.findByText("Com a assistente")).toBeInTheDocument();
+    expect(screen.getByText(/A assistente virtual está conversando/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Mensagem da assistente")).toHaveTextContent("Assistente");
+  });
+
+  it("mostra o vendedor e o resumo depois da distribuição", async () => {
+    mockApi({
+      "GET /api/leads/l1": {
+        body: {
+          lead: {
+            ...lead,
+            stage: "DISTRIBUIDO",
+            seller: { id: "u1", name: "Carlos Pereira" },
+            assignedAt: "2026-11-18T15:00:00.000Z",
+            qualificationSummary: "Quer comprar apto 2 quartos em Moema.",
+          },
+          messages: [received],
+        },
+      },
+    });
+    render(<ConversationView leadId="l1" />);
+
+    expect(await screen.findByText("Quer comprar apto 2 quartos em Moema.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Carlos Pereira/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/A assistente virtual está conversando/)).not.toBeInTheDocument();
   });
 });

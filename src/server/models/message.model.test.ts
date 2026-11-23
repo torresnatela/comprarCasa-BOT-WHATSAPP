@@ -79,3 +79,18 @@ describe("messageModel.listByLead", () => {
     expect(texts).toEqual(["primeira", "segunda"]);
   });
 });
+
+describe("messageModel.latestInbound / countByBot", () => {
+  it("acha a última mensagem recebida e conta só as da IA", async () => {
+    const lead = await createLead(testDb.db);
+    const model = messageModel(testDb.db);
+    const at = (minute: number) => new Date(`2026-11-17T12:${String(minute).padStart(2, "0")}:00Z`);
+    await model.insertIfNew({ ...base, leadId: lead.id, externalId: "R1", text: "oi", sentAt: at(1) });
+    await model.insertIfNew({ ...base, leadId: lead.id, externalId: "R2", text: "quero casa", sentAt: at(2) });
+    await model.insertIfNew({ ...base, leadId: lead.id, externalId: "B1", direction: "ENVIADA", sentByBot: true, text: "bot", sentAt: at(3) });
+    await model.insertIfNew({ ...base, leadId: lead.id, externalId: "E1", direction: "ENVIADA", text: "humano", sentAt: at(4) });
+
+    expect((await model.latestInbound(lead.id))?.externalId).toBe("R2");
+    expect(await model.countByBot(lead.id)).toBe(1);
+  });
+});

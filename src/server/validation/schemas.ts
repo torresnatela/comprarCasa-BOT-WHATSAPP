@@ -66,3 +66,7 @@ export const replySchema = z.object({
     .min(1, "Escreva a mensagem.")
     .max(4000, "A mensagem deve ter no máximo 4000 caracteres."),
 });
+
+export const rotationUpdateSchema = z.object({
+  inRotation: z.boolean("Valor inválido."),
+});

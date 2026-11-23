@@ -6,6 +6,7 @@ import { api, errorMessage } from "@/lib/api";
 import { formatDateTime, formatPhone, leadTitle } from "@/lib/format";
 import { usePolling } from "@/lib/use-polling";
 import type { PublicLead } from "@/server/controllers/presenters";
+import { StageBadge } from "./lead-stage";
 import { Alert, Button } from "./ui";
 
 const REFRESH_MS = 10_000;
@@ -88,9 +89,10 @@ export function LeadsView() {
                     {lead.lastMessageText}
                   </p>
                 </div>
-                <div className="shrink-0 text-right text-xs text-gray-500">
+                <div className="shrink-0 space-y-1 text-right text-xs text-gray-500">
                   {lead.name && lead.phone && <p>{formatPhone(lead.phone)}</p>}
                   <p>{formatDateTime(lead.lastMessageAt)}</p>
+                  <StageBadge stage={lead.stage} seller={lead.seller} />
                 </div>
               </Link>
             </li>

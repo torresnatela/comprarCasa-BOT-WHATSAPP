@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createLead } from "../../../tests/factories";
+import { createLead, createUser } from "../../../tests/factories";
 import { createTestDb, type TestDb } from "../../../tests/test-db";
 import { leadModel } from "./lead.model";
 
@@ -99,5 +99,41 @@ describe("leadModel — leitura", () => {
 
     expect((await model.findById(lead.id))?.id).toBe(lead.id);
     expect(await model.findById("00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
+});
+
+describe("leadModel etapas", () => {
+  it("lead novo começa qualificando", async () => {
+    const { lead } = await leadModel(testDb.db).findOrCreate(novo);
+
+    expect(lead.stage).toBe("QUALIFICANDO");
+  });
+
+  it("moveStage só troca se a etapa atual for a esperada", async () => {
+    const model = leadModel(testDb.db);
+    const lead = await createLead(testDb.db, { stage: "DISTRIBUIDO" });
+
+    expect(await model.moveStage(lead.id, "QUALIFICANDO", "HUMANO")).toBeNull();
+    expect((await model.moveStage(lead.id, "DISTRIBUIDO", "HUMANO"))?.stage).toBe("HUMANO");
+  });
+
+  it("finishQualification distribui ou deixa aguardando vendedor", async () => {
+    const model = leadModel(testDb.db);
+    const vendedor = await createUser(testDb.db);
+    const a = await createLead(testDb.db);
+    const b = await createLead(testDb.db);
+    const data = { qualification: { objetivo: "comprar" }, summary: "Quer comprar", at };
+
+    expect(await model.finishQualification(a.id, { ...data, assignedTo: vendedor.id })).toMatchObject({
+      stage: "DISTRIBUIDO",
+      assignedTo: vendedor.id,
+      assignedAt: at,
+      qualification: { objetivo: "comprar" },
+      qualificationSummary: "Quer comprar",
+    });
+    expect(await model.finishQualification(b.id, { ...data, assignedTo: null })).toMatchObject({
+      stage: "AGUARDANDO_VENDEDOR",
+      assignedTo: null,
+    });
   });
 });

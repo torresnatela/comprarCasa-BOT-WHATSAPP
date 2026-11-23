@@ -47,6 +47,11 @@ describe("GET /api/leads", () => {
       phone: "351912345678",
       lastMessageAt: "2026-11-17T10:00:00.000Z",
       lastMessageText: "Ainda está disponível?",
+      stage: "QUALIFICANDO",
+      seller: null,
+      assignedAt: null,
+      qualification: null,
+      qualificationSummary: null,
     });
   });
 
@@ -87,8 +92,8 @@ describe("GET /api/leads/[id]", () => {
     expect(response.status).toBe(200);
     expect(body.lead.id).toBe(lead.id);
     expect(body.messages).toEqual([
-      { id: expect.any(String), direction: "RECEBIDA", type: "TEXTO", text: "Olá", sentAt: "2026-11-17T12:00:00.000Z" },
-      { id: expect.any(String), direction: "ENVIADA", type: "TEXTO", text: "Bom dia!", sentAt: "2026-11-17T12:01:00.000Z" },
+      { id: expect.any(String), direction: "RECEBIDA", type: "TEXTO", text: "Olá", sentByBot: false, sentAt: "2026-11-17T12:00:00.000Z" },
+      { id: expect.any(String), direction: "ENVIADA", type: "TEXTO", text: "Bom dia!", sentByBot: false, sentAt: "2026-11-17T12:01:00.000Z" },
     ]);
   });
 
@@ -188,5 +193,29 @@ describe("POST /api/leads/[id]/mensagens", () => {
     const lead = await createLead(testDb.db);
     expect((await reply(vendedor, lead.id, { text: "Oi" })).status).toBe(403);
     expect(vendedor.evolution.sent).toEqual([]);
+  });
+});
+
+describe("GET /api/leads — rodízio", () => {
+  it("mostra a etapa, o vendedor e o resumo da qualificação", async () => {
+    const { controllers, session } = await setup();
+    const vendedor = await createUser(testDb.db, { name: "Carlos Pereira" });
+    await createLead(testDb.db, {
+      stage: "DISTRIBUIDO",
+      assignedTo: vendedor.id,
+      assignedAt: new Date("2026-11-18T15:00:00Z"),
+      qualification: { objetivo: "comprar" },
+      qualificationSummary: "Quer comprar",
+    });
+
+    const body = await (await controllers.lead.list(apiRequest("GET", "/api/leads", { session }))).json();
+
+    expect(body.leads[0]).toMatchObject({
+      stage: "DISTRIBUIDO",
+      seller: { id: vendedor.id, name: "Carlos Pereira" },
+      assignedAt: "2026-11-18T15:00:00.000Z",
+      qualification: { objetivo: "comprar" },
+      qualificationSummary: "Quer comprar",
+    });
   });
 });
