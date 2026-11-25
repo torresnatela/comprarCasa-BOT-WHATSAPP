@@ -4,6 +4,7 @@ import type { EvolutionConfig } from "../integrations/evolution/config";
 import { createAuthService } from "./auth.service";
 import { createCollaboratorService } from "./collaborator.service";
 import { createConversationService } from "./conversation.service";
+import { createFunnelService } from "./funnel.service";
 import { createInviteService } from "./invite.service";
 import type { PasswordHasher } from "./password";
 import { createQualificationService } from "./qualification.service";
@@ -46,6 +47,7 @@ export function createServices({
       delayMs: qualifierDelayMs,
     }),
     rotation: createRotationService({ db: deps.db }),
+    funnel: createFunnelService(deps),
     whatsapp: createWhatsappService({
       evolution: whatsapp.client,
       webhookSecret: whatsapp.webhookSecret,

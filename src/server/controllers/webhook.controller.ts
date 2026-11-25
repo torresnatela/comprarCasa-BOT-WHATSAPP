@@ -65,11 +65,7 @@ export function createWebhookController({
       }
 
       const result = await conversations.receive(event.message);
-      if (
-        result.status === "stored" &&
-        result.message.direction === "RECEBIDA" &&
-        result.lead.stage === "QUALIFICANDO"
-      ) {
+      if (result.status === "stored" && result.automationActive) {
         const { lead, message } = result;
         defer(() =>
           qualification.handleInbound(lead.id, message.id).catch((error) => {

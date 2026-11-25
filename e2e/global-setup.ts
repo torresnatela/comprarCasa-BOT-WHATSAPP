@@ -12,7 +12,7 @@ export default async function globalSetup() {
   const db = getDb();
   try {
     await migrate(db as never, { migrationsFolder: "src/server/db/migrations" });
-    await db.execute(sql`TRUNCATE TABLE messages, leads, invites, sessions, users CASCADE`);
+    await db.execute(sql`TRUNCATE TABLE lead_tasks, messages, leads, invites, sessions, users CASCADE`);
     await seedFirstManager(db, createPasswordHasher(), MANAGER);
     await db.insert(users).values({ ...SELLER, role: "VENDEDOR", status: "ATIVO" });
   } finally {

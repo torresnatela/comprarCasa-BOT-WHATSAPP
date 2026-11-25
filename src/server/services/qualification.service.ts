@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { isAutomationActive } from "../../lib/funnel";
 import type { Lead, Message, Qualification, User } from "../db/schema";
 import type { Database } from "../db/types";
 import type { LeadQualifier } from "../integrations/anthropic/qualifier";
@@ -178,7 +179,7 @@ export function createQualificationService({
         const isLatest = async () => (await messages.latestInbound(leadId))?.id === messageId;
 
         const lead = await leads.findById(leadId);
-        if (!lead || lead.stage !== "QUALIFICANDO" || !(await isLatest())) return "skipped";
+        if (!lead || !isAutomationActive(lead) || !(await isLatest())) return "skipped";
 
         const history = await messages.listByLead(leadId);
         // Como uma pessoa: lê (vistos azuis) e começa a escrever.
@@ -207,9 +208,9 @@ export function createQualificationService({
 
         // Chegou mensagem nova enquanto a IA pensava: ela responde com tudo.
         if (!(await isLatest())) return "skipped";
-        // Um colaborador assumiu a conversa enquanto a IA pensava.
+        // Um colaborador assumiu a conversa ou pausou a IA enquanto ela pensava.
         const current = await leads.findById(leadId);
-        if (current?.stage !== "QUALIFICANDO") return "skipped";
+        if (!current || !isAutomationActive(current)) return "skipped";
 
         if (turn.done || !turn.reply) {
           return handoff(tx, evo, lead, {

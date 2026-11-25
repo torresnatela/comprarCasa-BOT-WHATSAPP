@@ -157,4 +157,20 @@ describe("POST /api/webhooks/evolution — qualificação por IA", () => {
 
     expect(ai.calls).toHaveLength(1);
   });
+
+  it("não agenda a IA quando o gestor a pausou", async () => {
+    const { controllers, services, ai, settle } = createTestApp(testDb.db);
+    ai.script.push({ reply: "primeira" });
+    await controllers.webhook.receive(webhookRequest(upsertPayload()));
+    await settle();
+    const [lead] = await services.conversations.listLeads();
+    await services.funnel.setAutomation(lead.id, true);
+
+    await controllers.webhook.receive(
+      webhookRequest(upsertPayload({ id: "OUTRA-1", message: { conversation: "alguém aí?" } })),
+    );
+    await settle();
+
+    expect(ai.calls).toHaveLength(1);
+  });
 });
