@@ -29,6 +29,13 @@
       "when": 1795461457755,
       "tag": "0003_funil",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795613646852,
+      "tag": "0004_acesso_mensagens",
+      "breakpoints": true
     }
   ]
 }

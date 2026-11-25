@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
+import { leadScope } from "@/lib/access";
 import { api } from "@/lib/api";
 import { ROLE_LABELS } from "@/lib/format";
 import type { PublicUser } from "@/server/controllers/presenters";
@@ -17,9 +18,9 @@ export function PortalShell({ user, children }: Props) {
 
   const links = [
     { href: "/", label: "Início" },
+    ...(leadScope(user) !== "NONE" ? [{ href: "/leads", label: "Leads" }] : []),
     ...(user.role === "GESTOR"
       ? [
-          { href: "/leads", label: "Leads" },
           { href: "/rodizio", label: "Rodízio" },
           { href: "/colaboradores", label: "Colaboradores" },
           { href: "/whatsapp", label: "WhatsApp" },

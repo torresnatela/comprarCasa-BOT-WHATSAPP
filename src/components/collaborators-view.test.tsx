@@ -15,6 +15,7 @@ const gestora = {
   phone: "5511911112222",
   role: "GESTOR",
   status: "ATIVO",
+  messageAccess: "PROPRIAS",
   createdAt: "2026-11-01T12:00:00.000Z",
 };
 const bia = {
@@ -24,6 +25,7 @@ const bia = {
   phone: "5511988887777",
   role: "VENDEDOR",
   status: "ATIVO",
+  messageAccess: "PROPRIAS",
   createdAt: "2026-11-02T12:00:00.000Z",
 };
 const list = { body: { collaborators: [bia, gestora] } };
@@ -51,6 +53,22 @@ describe("CollaboratorsView", () => {
     expect(biaRow.getByText("+55 (11) 98888-7777")).toBeInTheDocument();
     expect(biaRow.getByText("Vendedor")).toBeInTheDocument();
     expect(biaRow.getByText("Ativo")).toBeInTheDocument();
+    expect(biaRow.getByText("Mensagens: Só os leads dele")).toBeInTheDocument();
+    expect(
+      within(await row("Gestora Demo")).queryByText(/Mensagens:/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("acesso às mensagens só aparece para vendedor", async () => {
+    mockApi({ "GET /api/colaboradores": list });
+    const user = renderView();
+
+    await user.click(await screen.findByRole("button", { name: "Novo colaborador" }));
+    const form = within(screen.getByRole("dialog", { name: "Novo colaborador" }));
+    expect(form.getByLabelText("Acesso às mensagens")).toHaveValue("PROPRIAS");
+
+    await user.selectOptions(form.getByLabelText("Papel"), "GESTOR");
+    expect(form.queryByLabelText("Acesso às mensagens")).not.toBeInTheDocument();
   });
 
   it("não oferece desativar a própria conta", async () => {
@@ -93,6 +111,7 @@ describe("CollaboratorsView", () => {
     await user.type(form.getByLabelText("E-mail"), "caio@exemplo.com");
     await user.type(form.getByLabelText("WhatsApp"), "(11) 97777-6666");
     await user.selectOptions(form.getByLabelText("Papel"), "VENDEDOR");
+    await user.selectOptions(form.getByLabelText("Acesso às mensagens"), "TODAS");
     await user.click(form.getByRole("button", { name: "Cadastrar e gerar link" }));
 
     expect(calls.at(-1)).toEqual({
@@ -103,6 +122,7 @@ describe("CollaboratorsView", () => {
         email: "caio@exemplo.com",
         phone: "(11) 97777-6666",
         role: "VENDEDOR",
+        messageAccess: "TODAS",
       },
     });
     const dialog = within(await screen.findByRole("dialog", { name: "Link de acesso" }));

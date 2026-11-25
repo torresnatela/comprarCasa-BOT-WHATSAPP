@@ -11,14 +11,24 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { DEAL_TYPES, LEAD_STAGES, LOST_REASONS } from "../../lib/funnel";
+import { DEFAULT_MESSAGE_ACCESS, MESSAGE_ACCESS_LEVELS } from "../../lib/access";
 import { USER_ROLES, USER_STATUSES } from "../../lib/roles";
 
-export { DEAL_TYPES, LEAD_STAGES, LOST_REASONS, USER_ROLES, USER_STATUSES };
+export {
+  DEAL_TYPES,
+  LEAD_STAGES,
+  LOST_REASONS,
+  MESSAGE_ACCESS_LEVELS,
+  USER_ROLES,
+  USER_STATUSES,
+};
+export type { MessageAccess } from "../../lib/access";
 export type { DealType, LeadStage, LostReason } from "../../lib/funnel";
 export type { UserRole, UserStatus } from "../../lib/roles";
 
 export const userRole = pgEnum("user_role", USER_ROLES);
 export const userStatus = pgEnum("user_status", USER_STATUSES);
+export const messageAccess = pgEnum("message_access", MESSAGE_ACCESS_LEVELS);
 
 const createdAt = timestamp("created_at", { withTimezone: true })
   .notNull()
@@ -36,6 +46,10 @@ export const users = pgTable("users", {
   inRotation: boolean("in_rotation").notNull().default(true),
   /** Quando recebeu o último lead do rodízio: quem recebeu há mais tempo é o próximo. */
   lastAssignedAt: timestamp("last_assigned_at", { withTimezone: true }),
+  /** Quais conversas o vendedor vê e responde (veja `src/lib/access.ts`). */
+  messageAccess: messageAccess("message_access")
+    .notNull()
+    .default(DEFAULT_MESSAGE_ACCESS),
   createdAt,
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

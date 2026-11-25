@@ -82,6 +82,7 @@ describe("POST /api/colaboradores", () => {
       phone: "5511988887777",
       role: "VENDEDOR",
       status: "PENDENTE",
+      messageAccess: "PROPRIAS",
     });
     expect(body.invite.url).toMatch(
       /^http:\/\/localhost:3000\/convite\/[A-Za-z0-9_-]{43}$/,
@@ -251,5 +252,47 @@ describe("POST /api/colaboradores/[id]/convite", () => {
     );
 
     expect(response.status).toBe(403);
+  });
+});
+
+describe("acesso do vendedor às mensagens", () => {
+  it("cadastra com o acesso escolhido e edita depois", async () => {
+    const { controllers, session } = await setup();
+
+    const created = await controllers.collaborator.create(
+      apiRequest("POST", "/api/colaboradores", {
+        session,
+        body: { ...novo, messageAccess: "TODAS" },
+      }),
+    );
+    const { collaborator } = await created.json();
+    expect(created.status).toBe(201);
+    expect(collaborator.messageAccess).toBe("TODAS");
+
+    const updated = await controllers.collaborator.update(
+      apiRequest("PATCH", `/api/colaboradores/${collaborator.id}`, {
+        session,
+        body: { messageAccess: "NENHUMA" },
+      }),
+      routeParams({ id: collaborator.id }),
+    );
+    expect(updated.status).toBe(200);
+    expect((await updated.json()).collaborator.messageAccess).toBe("NENHUMA");
+  });
+
+  it("recusa um acesso inválido", async () => {
+    const { controllers, session } = await setup();
+    const target = await createUser(testDb.db);
+
+    const response = await controllers.collaborator.update(
+      apiRequest("PATCH", `/api/colaboradores/${target.id}`, {
+        session,
+        body: { messageAccess: "ALGUMAS" },
+      }),
+      routeParams({ id: target.id }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(Object.keys((await response.json()).error.fields)).toEqual(["messageAccess"]);
   });
 });

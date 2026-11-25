@@ -1,7 +1,8 @@
+import { canAccessLead, leadScope } from "../../lib/access";
 import { isAutomationActive } from "../../lib/funnel";
 import type { Lead, LeadTask, Message, User } from "../db/schema";
 import type { Database } from "../db/types";
-import { AppError, NotFoundError } from "../http/errors";
+import { AppError, ForbiddenError, NotFoundError } from "../http/errors";
 import type { EvolutionClient } from "../integrations/evolution/client";
 import type { IncomingMessage } from "../integrations/evolution/webhook-payload";
 import { type LeadListItem, type LeadWithSeller, leadModel } from "../models/lead.model";
@@ -32,6 +33,11 @@ export const whatsappNotConfigured = () =>
     "WHATSAPP_NOT_CONFIGURED",
     "A integração com o WhatsApp ainda não foi configurada.",
   );
+
+const noMessageAccess = () =>
+  new ForbiddenError("NO_MESSAGE_ACCESS", "Você não tem acesso às mensagens.");
+
+const leadNotFound = () => new NotFoundError("LEAD_NOT_FOUND", "Lead não encontrado.");
 
 export function createConversationService({ db, evolution }: Deps) {
   return {
@@ -84,15 +90,29 @@ export function createConversationService({ db, evolution }: Deps) {
       });
     },
 
-    listLeads(): Promise<LeadListItem[]> {
-      return leadModel(db).list();
+    /** Leads que a pessoa alcança pelo seu acesso às mensagens. */
+    listLeads(actor: User): Promise<LeadListItem[]> {
+      const scope = leadScope(actor);
+      if (scope === "NONE") throw noMessageAccess();
+      return leadModel(db).list(scope === "OWN" ? { assignedTo: actor.id } : {});
+    },
+
+    /**
+     * Confere se a pessoa pode ver e agir sobre o lead. Lead de outro vendedor
+     * responde como inexistente, para não revelar que ele existe.
+     */
+    async assertLeadAccess(leadId: string, actor: User): Promise<void> {
+      if (leadScope(actor) === "NONE") throw noMessageAccess();
+      if (leadScope(actor) === "ALL") return;
+      const lead = await leadModel(db).findById(leadId);
+      if (!lead || !canAccessLead(actor, lead)) throw leadNotFound();
     },
 
     async getConversation(
       leadId: string,
     ): Promise<{ lead: LeadWithSeller; messages: Message[]; tasks: LeadTask[] }> {
       const lead = await leadModel(db).findWithSeller(leadId);
-      if (!lead) throw new NotFoundError("LEAD_NOT_FOUND", "Lead não encontrado.");
+      if (!lead) throw leadNotFound();
       const [messages, tasks] = await Promise.all([
         messageModel(db).listByLead(leadId),
         taskModel(db).listByLead(leadId),
@@ -104,7 +124,7 @@ export function createConversationService({ db, evolution }: Deps) {
     async reply(leadId: string, text: string, actor: User): Promise<Message> {
       if (!evolution) throw whatsappNotConfigured();
       const lead = await leadModel(db).findById(leadId);
-      if (!lead) throw new NotFoundError("LEAD_NOT_FOUND", "Lead não encontrado.");
+      if (!lead) throw leadNotFound();
 
       const sent = await evolution.sendText(lead.whatsappJid, text);
 

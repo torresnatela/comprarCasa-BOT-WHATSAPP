@@ -27,13 +27,13 @@ function webhookRequest(body: unknown, secret: string | null = WEBHOOK_SECRET) {
 
 describe("POST /api/webhooks/evolution", () => {
   it("grava a mensagem e cria o lead", async () => {
-    const { controllers, services } = createTestApp(testDb.db);
+    const { controllers } = createTestApp(testDb.db);
 
     const response = await controllers.webhook.receive(webhookRequest(upsertPayload()));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, result: "stored" });
-    const [lead] = await services.conversations.listLeads();
+    const [lead] = await leadModel(testDb.db).list();
     expect(lead).toMatchObject({
       name: "Maria Silva",
       phone: "351912345678",
@@ -49,7 +49,7 @@ describe("POST /api/webhooks/evolution", () => {
 
     expect(again.status).toBe(200);
     expect(await again.json()).toEqual({ ok: true, result: "duplicate" });
-    const [lead] = await services.conversations.listLeads();
+    const [lead] = await leadModel(testDb.db).list();
     expect((await services.conversations.getConversation(lead.id)).messages).toHaveLength(1);
   });
 
@@ -58,18 +58,18 @@ describe("POST /api/webhooks/evolution", () => {
     ["com segredo errado", "segredo-errado"],
     ["com segredo de outro tamanho", "x"],
   ])("responde 401 %s e não grava nada", async (_caso, secret) => {
-    const { controllers, services } = createTestApp(testDb.db);
+    const { controllers } = createTestApp(testDb.db);
 
     const response = await controllers.webhook.receive(
       webhookRequest(upsertPayload(), secret),
     );
 
     expect(response.status).toBe(401);
-    expect(await services.conversations.listLeads()).toEqual([]);
+    expect(await leadModel(testDb.db).list()).toEqual([]);
   });
 
   it("responde 200 e ignora mensagem de grupo (para a Evolution não reenviar)", async () => {
-    const { controllers, services } = createTestApp(testDb.db);
+    const { controllers } = createTestApp(testDb.db);
 
     const response = await controllers.webhook.receive(
       webhookRequest(upsertPayload({ remoteJid: "120363025246125486@g.us" })),
@@ -77,11 +77,11 @@ describe("POST /api/webhooks/evolution", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, result: "ignored" });
-    expect(await services.conversations.listLeads()).toEqual([]);
+    expect(await leadModel(testDb.db).list()).toEqual([]);
   });
 
   it("ignora eventos de outra instância do mesmo servidor Evolution", async () => {
-    const { controllers, services } = createTestApp(testDb.db);
+    const { controllers } = createTestApp(testDb.db);
 
     const response = await controllers.webhook.receive(
       webhookRequest(upsertPayload({ instance: "Outra Empresa" })),
@@ -89,7 +89,7 @@ describe("POST /api/webhooks/evolution", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, result: "ignored" });
-    expect(await services.conversations.listLeads()).toEqual([]);
+    expect(await leadModel(testDb.db).list()).toEqual([]);
   });
 
   it("responde 400 para corpo que não é JSON", async () => {
@@ -139,7 +139,7 @@ describe("POST /api/webhooks/evolution — qualificação por IA", () => {
   });
 
   it("não agenda a IA para duplicatas, mensagens enviadas ou leads com humano", async () => {
-    const { controllers, services, ai, settle } = createTestApp(testDb.db);
+    const { controllers, ai, settle } = createTestApp(testDb.db);
     ai.script.push({ reply: "primeira" });
     await controllers.webhook.receive(webhookRequest(upsertPayload()));
     await settle();
@@ -148,7 +148,7 @@ describe("POST /api/webhooks/evolution — qualificação por IA", () => {
     await controllers.webhook.receive(
       webhookRequest(upsertPayload({ id: "ENVIADA-1", fromMe: true, message: { conversation: "do celular" } })),
     );
-    const [lead] = await services.conversations.listLeads();
+    const [lead] = await leadModel(testDb.db).list();
     await leadModel(testDb.db).moveStage(lead.id, "QUALIFICANDO", "HUMANO");
     await controllers.webhook.receive(
       webhookRequest(upsertPayload({ id: "OUTRA-1", message: { conversation: "alguém aí?" } })),
@@ -163,7 +163,7 @@ describe("POST /api/webhooks/evolution — qualificação por IA", () => {
     ai.script.push({ reply: "primeira" });
     await controllers.webhook.receive(webhookRequest(upsertPayload()));
     await settle();
-    const [lead] = await services.conversations.listLeads();
+    const [lead] = await leadModel(testDb.db).list();
     await services.funnel.setAutomation(lead.id, true);
 
     await controllers.webhook.receive(
