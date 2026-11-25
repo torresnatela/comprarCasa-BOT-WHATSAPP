@@ -18,6 +18,11 @@ const maria = {
   assignedAt: null,
   qualification: null,
   qualificationSummary: null,
+  automationPaused: false,
+  stageChangedAt: "2026-11-17T12:00:00.000Z",
+  won: null,
+  lost: null,
+  nextTaskDue: null,
 };
 const semNome = {
   id: "l2",
@@ -25,11 +30,16 @@ const semNome = {
   phone: "351933333333",
   lastMessageAt: "2026-11-16T09:00:00.000Z",
   lastMessageText: "[imagem]",
-  stage: "HUMANO",
+  stage: "PERDIDO",
   seller: null,
   assignedAt: null,
   qualification: null,
   qualificationSummary: null,
+  automationPaused: true,
+  stageChangedAt: "2026-11-17T12:00:00.000Z",
+  won: null,
+  lost: null,
+  nextTaskDue: null,
 };
 
 describe("LeadsView", () => {
@@ -46,6 +56,33 @@ describe("LeadsView", () => {
       "href",
       "/leads/l2",
     );
+  });
+
+  it("filtra por etapa com contagem e mostra os avisos de cada contato", async () => {
+    const pausado = {
+      ...maria,
+      id: "l3",
+      name: "João",
+      stage: "QUALIFICANDO",
+      automationPaused: true,
+      nextTaskDue: "2020-01-01",
+    };
+    mockApi({ "GET /api/leads": { body: { leads: [maria, semNome, pausado] } } });
+    const user = userEvent.setup();
+    render(<LeadsView />);
+
+    await screen.findByRole("link", { name: /Maria Silva/ });
+    expect(screen.getByRole("tab", { name: "Todos 3" })).toHaveAttribute("aria-selected", "true");
+    const joao = screen.getByRole("link", { name: /João/ });
+    expect(within(joao).getByText("IA pausada")).toBeInTheDocument();
+    expect(within(joao).getByText("Tarefa vencida")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Perdido 1" }));
+    expect(screen.queryByRole("link", { name: /Maria Silva/ })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /933/ })).getByText("Perdido")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Ganho 0" }));
+    expect(screen.getByText("Nenhum contato nesta etapa.")).toBeInTheDocument();
   });
 
   it("explica o que fazer quando ainda não há leads", async () => {

@@ -12,6 +12,8 @@ portal para cadastrar a equipe.
 - Qualificação por IA (Claude Sonnet) e rodízio de vendedores: a assistente
   conversa com o lead novo e o entrega ao próximo vendedor da fila. Veja
   [Qualificação e rodízio](#qualificação-e-rodízio).
+- Funil simples por contato (mini-CRM): etapa, pausa da IA, tarefas e
+  desfecho (ganho ou perdido). Veja [Funil](#funil-do-contato).
 
 ## Stack
 
@@ -128,6 +130,11 @@ Convenções:
 | `GET /api/leads` | gestor | Leads, do mais recente para o mais antigo |
 | `GET /api/leads/:id` | gestor | Lead e a conversa |
 | `POST /api/leads/:id/mensagens` | gestor | Responde pelo WhatsApp |
+| `PATCH /api/leads/:id/etapa` | gestor | Muda a etapa (Ganho/Perdido com os dados do desfecho) |
+| `PATCH /api/leads/:id/automacao` | gestor | Pausa ou retoma a IA (`{ paused }`) |
+| `POST /api/leads/:id/tarefas` | gestor | Cria tarefa (`{ title, dueDate }`) |
+| `PATCH /api/leads/:id/tarefas/:tarefaId` | gestor | Marca como feita ou não (`{ done }`) |
+| `DELETE /api/leads/:id/tarefas/:tarefaId` | gestor | Exclui a tarefa |
 | `GET /api/rodizio` | gestor | Vendedores ativos na ordem da fila |
 | `PATCH /api/rodizio/:id` | gestor | Coloca ou tira o vendedor da fila (`{ inRotation }`) |
 | `GET /api/whatsapp/status` | gestor | Estado da instância e do webhook |
@@ -234,7 +241,9 @@ Regras:
 - A IA responde depois do 200 do webhook (`after` do Next), esperando
   `QUALIFIER_DELAY_MS` (4 s) para juntar mensagens mandadas em sequência; só a
   mais recente é respondida.
-- Se alguém responde pelo portal, o lead passa para `HUMANO` e a IA para.
+- Se alguém responde pelo portal, o lead passa para `HUMANO` e a IA para. O
+  gestor também pode pausar a IA na tela da conversa (veja
+  [Funil](#funil-do-contato)).
 - O lead nunca fica parado: erro ou recusa da IA, `ANTHROPIC_API_KEY` ausente
   ou 6 perguntas sem concluir levam o lead direto ao rodízio.
 - Leads que já existiam antes desta fase ficaram como `HUMANO`.
@@ -245,6 +254,38 @@ Variáveis: `ANTHROPIC_API_KEY` (obrigatória para a conversa automática),
 `ANTHROPIC_MODEL` e `QUALIFIER_DELAY_MS` (opcionais). Os testes usam uma IA
 falsa e não chamam a API.
 
+## Funil do contato
+
+Um mini-CRM por contato: uma única etapa, a pausa da IA, tarefas e o
+desfecho. A IA cuida só da primeira etapa; o resto é da equipe.
+
+| Etapa | Quem conduz | Como chega lá |
+|---|---|---|
+| **Com a assistente** (`QUALIFICANDO`) | IA, se não estiver pausada | Lead novo, ou o gestor volta o contato |
+| **Aguardando vendedor** | Gestor | Fim da qualificação sem vendedor na fila |
+| **Com vendedor** (`DISTRIBUIDO`) | Vendedor | Fim da qualificação, pelo rodízio |
+| **Com a equipe** (`HUMANO`) | Equipe | Resposta pelo portal, ou o gestor escolhe |
+| **Parado** | Equipe — contato esfriou | O gestor escolhe |
+| **Ganho** | Fechado: compra ou aluguel, valor e condições | O gestor escolhe |
+| **Perdido** | Fechado: motivo (preço, comprou com outro, desistiu, sem resposta, sem crédito, outro) e observação | O gestor escolhe |
+
+Regras:
+
+- A IA só responde quando o contato está com a assistente **e** ela não foi
+  pausada (`isAutomationActive` em `src/lib/funnel.ts`; `receive()` devolve
+  `automationActive`, que o webhook usa para chamar a qualificação).
+- **Pausar IA / Retomar IA** só existe com o contato na assistente. Toda
+  mudança manual de etapa pausa a IA; voltar para a assistente não a religa
+  sozinho — é preciso clicar em **Retomar IA**.
+- Aguardando vendedor e Com vendedor dependem do rodízio: não aparecem no
+  seletor de etapa (a não ser como a etapa atual). Mudar a etapa mantém o
+  vendedor que recebeu o lead.
+- Ganho exige tipo e valor; Perdido exige motivo (e observação, se o motivo
+  for "Outro"). Reabrir um contato fechado apaga esses dados.
+- Mensagem nova nunca muda a etapa: um contato Ganho, Perdido ou Parado que
+  volta a escrever continua onde está até alguém mudar.
+- Tarefas têm título e data. A lista de leads avisa quando há tarefa vencida
+  ou para hoje, e tem abas por etapa.
 ## Deploy na Vercel
 
 1. Importe o repositório na Vercel (preset Next.js).

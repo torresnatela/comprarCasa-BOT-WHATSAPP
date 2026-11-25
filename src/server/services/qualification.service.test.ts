@@ -177,6 +177,18 @@ describe("qualificationService.handleInbound — conversa", () => {
     expect(await service.handleInbound(lead.id, await inbound(lead.id, "oi Ana"))).toBe("skipped");
     expect(evolution.sent).toHaveLength(1);
   });
+
+  it("com a IA pausada pelo gestor, não responde; ao retomar, volta a responder", async () => {
+    const { service, evolution, ai } = setup([{ reply: "Qual região?" }]);
+    const lead = await newLead({ automationPaused: true });
+
+    expect(await service.handleInbound(lead.id, await inbound(lead.id, "oi"))).toBe("skipped");
+    expect(evolution.sent).toEqual([]);
+    expect(ai.calls).toEqual([]);
+
+    await leadModel(testDb.db).updateFunnel(lead.id, { automationPaused: false });
+    expect(await service.handleInbound(lead.id, await inbound(lead.id, "oi de novo"))).toBe("replied");
+  });
 });
 
 describe("qualificationService — passagem para o vendedor", () => {

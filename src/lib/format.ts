@@ -40,11 +40,25 @@ export function formatDateTime(iso: string, timeZone?: string): string {
   return `${day} às ${time}`;
 }
 
-export type LeadStage = "QUALIFICANDO" | "AGUARDANDO_VENDEDOR" | "DISTRIBUIDO" | "HUMANO";
+/** `350000` → `R$ 350.000,00`. */
+export function formatMoney(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
 
-export const STAGE_LABELS: Record<LeadStage, string> = {
-  QUALIFICANDO: "Com a assistente",
-  AGUARDANDO_VENDEDOR: "Aguardando vendedor",
-  DISTRIBUIDO: "Com vendedor",
-  HUMANO: "Com a equipe",
-};
+/** `2026-11-25` → `25/11/2026` (data sem horário, sem fuso). */
+export function formatDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+/** Hoje no fuso de quem está vendo, como `AAAA-MM-DD`. */
+export function todayISO(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** Situação de um vencimento em relação a hoje. */
+export function dueStatus(isoDate: string, today = todayISO()): "vencida" | "hoje" | "futura" {
+  if (isoDate < today) return "vencida";
+  return isoDate === today ? "hoje" : "futura";
+}

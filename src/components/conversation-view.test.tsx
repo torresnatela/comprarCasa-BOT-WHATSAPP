@@ -18,6 +18,11 @@ const lead = {
   assignedAt: null,
   qualification: null,
   qualificationSummary: null,
+  automationPaused: false,
+  stageChangedAt: "2026-11-17T12:00:00.000Z",
+  won: null,
+  lost: null,
+  nextTaskDue: null,
 };
 const received = {
   id: "m1",
@@ -35,7 +40,7 @@ const sent = {
   sentByBot: false,
   sentAt: "2026-11-17T12:01:00.000Z",
 };
-const conversation = { body: { lead, messages: [received, sent] } };
+const conversation = { body: { lead, messages: [received, sent], tasks: [] } };
 
 describe("ConversationView", () => {
   it("mostra quem é o lead e a conversa em ordem, diferenciando quem falou", async () => {
@@ -114,6 +119,118 @@ describe("ConversationView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Lead não encontrado.");
     expect(screen.queryByLabelText("Resposta")).not.toBeInTheDocument();
   });
+
+  it("muda a etapa e mostra que a IA desligou", async () => {
+    const { calls } = mockApi({
+      "GET /api/leads/l1": conversation,
+      "PATCH /api/leads/l1/etapa": {
+        body: { lead: { ...lead, stage: "PARADO", automationPaused: true } },
+      },
+    });
+    const user = userEvent.setup();
+    render(<ConversationView leadId="l1" />);
+
+    await user.selectOptions(await screen.findByLabelText("Etapa"), "PARADO");
+
+    expect(calls.at(-1)).toEqual({
+      method: "PATCH",
+      path: "/api/leads/l1/etapa",
+      body: { stage: "PARADO" },
+    });
+    expect(
+      await screen.findByText("Desligada: o contato não está com a assistente."),
+    ).toBeInTheDocument();
+  });
+
+  it("pede os dados do ganho antes de fechar", async () => {
+    const won = { type: "COMPRA", value: 350000.5, conditions: "Financiamento" };
+    const { calls } = mockApi({
+      "GET /api/leads/l1": conversation,
+      "PATCH /api/leads/l1/etapa": {
+        body: { lead: { ...lead, stage: "GANHO", automationPaused: true, won } },
+      },
+    });
+    const user = userEvent.setup();
+    render(<ConversationView leadId="l1" />);
+
+    await user.selectOptions(await screen.findByLabelText("Etapa"), "GANHO");
+    const dialog = screen.getByRole("dialog", { name: "Marcar como ganho" });
+    await user.type(within(dialog).getByLabelText("Valor (R$)"), "R$ 350.000,50");
+    await user.type(within(dialog).getByLabelText("Condições (opcional)"), "Financiamento");
+    await user.click(within(dialog).getByRole("button", { name: "Salvar" }));
+
+    expect(calls.at(-1)?.body).toEqual({
+      stage: "GANHO",
+      wonType: "COMPRA",
+      wonValue: 350000.5,
+      wonConditions: "Financiamento",
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByText(/Compra · R\$\s350\.000,50/)).toBeInTheDocument();
+  });
+
+  it("mostra o erro do campo quando falta o motivo do perdido", async () => {
+    mockApi({
+      "GET /api/leads/l1": conversation,
+      "PATCH /api/leads/l1/etapa": apiError(400, "VALIDATION", "Dados inválidos.", {
+        lostReason: "Selecione o motivo.",
+      }),
+    });
+    const user = userEvent.setup();
+    render(<ConversationView leadId="l1" />);
+
+    await user.selectOptions(await screen.findByLabelText("Etapa"), "PERDIDO");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(await screen.findByText("Selecione o motivo.")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("pausa a IA", async () => {
+    const { calls } = mockApi({
+      "GET /api/leads/l1": {
+        body: { ...conversation.body, lead: { ...lead, stage: "QUALIFICANDO" } },
+      },
+      "PATCH /api/leads/l1/automacao": {
+        body: { lead: { ...lead, stage: "QUALIFICANDO", automationPaused: true } },
+      },
+    });
+    const user = userEvent.setup();
+    render(<ConversationView leadId="l1" />);
+
+    await user.click(await screen.findByRole("button", { name: "Pausar IA" }));
+
+    expect(calls.at(-1)?.body).toEqual({ paused: true });
+    expect(await screen.findByRole("button", { name: "Retomar IA" })).toBeInTheDocument();
+  });
+
+  it("cria e conclui uma tarefa", async () => {
+    const task = { id: "t1", title: "Ligar", dueDate: "2026-11-25", done: false };
+    const { calls } = mockApi({
+      "GET /api/leads/l1": conversation,
+      "POST /api/leads/l1/tarefas": { status: 201, body: { task } },
+      "PATCH /api/leads/l1/tarefas/t1": { body: { task: { ...task, done: true } } },
+    });
+    const user = userEvent.setup();
+    render(<ConversationView leadId="l1" />);
+
+    await user.type(await screen.findByLabelText("Nova tarefa"), "Ligar");
+    const date = screen.getByLabelText("Data");
+    await user.clear(date);
+    await user.type(date, "2026-11-25");
+    await user.click(screen.getByRole("button", { name: "Adicionar" }));
+
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+      title: "Ligar",
+      dueDate: "2026-11-25",
+    });
+    const checkbox = await screen.findByRole("checkbox", { name: "Concluir: Ligar" });
+    expect(screen.getByText("25/11/2026")).toBeInTheDocument();
+
+    await user.click(checkbox);
+    expect(calls.at(-1)?.body).toEqual({ done: true });
+    expect(await screen.findByRole("checkbox", { name: "Concluir: Ligar" })).toBeChecked();
+  });
 });
 
 describe("ConversationView — qualificação por IA", () => {
@@ -121,12 +238,13 @@ describe("ConversationView — qualificação por IA", () => {
     const bot = { ...sent, id: "m3", text: "Você quer comprar ou alugar?", sentByBot: true };
     mockApi({
       "GET /api/leads/l1": {
-        body: { lead: { ...lead, stage: "QUALIFICANDO" }, messages: [received, bot] },
+        body: { lead: { ...lead, stage: "QUALIFICANDO" }, messages: [received, bot], tasks: [] },
       },
     });
     render(<ConversationView leadId="l1" />);
 
-    expect(await screen.findByText("Com a assistente")).toBeInTheDocument();
+    // A etapa aparece no selo e no seletor do funil.
+    expect(await screen.findAllByText("Com a assistente")).toHaveLength(2);
     expect(screen.getByText(/A assistente virtual está conversando/)).toBeInTheDocument();
     expect(screen.getByLabelText("Mensagem da assistente")).toHaveTextContent("Assistente");
   });
@@ -143,6 +261,7 @@ describe("ConversationView — qualificação por IA", () => {
             qualificationSummary: "Quer comprar apto 2 quartos em Moema.",
           },
           messages: [received],
+          tasks: [],
         },
       },
     });

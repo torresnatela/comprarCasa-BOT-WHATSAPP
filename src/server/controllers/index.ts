@@ -35,7 +35,11 @@ export function createControllers({
       appUrl,
     }),
     invite: createInviteController({ invites: services.invites, secureCookies }),
-    lead: createLeadController({ guard, conversations: services.conversations }),
+    lead: createLeadController({
+      guard,
+      conversations: services.conversations,
+      funnel: services.funnel,
+    }),
     rotation: createRotationController({ guard, rotation: services.rotation }),
     whatsapp: createWhatsappController({ guard, whatsapp: services.whatsapp }),
     webhook: createWebhookController({

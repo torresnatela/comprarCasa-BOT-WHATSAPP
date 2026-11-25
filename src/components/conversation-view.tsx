@@ -5,13 +5,19 @@ import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 
 import { api, errorMessage } from "@/lib/api";
 import { formatDateTime, formatPhone, leadTitle } from "@/lib/format";
 import { usePolling } from "@/lib/use-polling";
-import type { PublicLead, PublicMessage } from "@/server/controllers/presenters";
+import { isAutomationActive } from "@/lib/funnel";
+import type {
+  PublicLead,
+  PublicMessage,
+  PublicTask,
+} from "@/server/controllers/presenters";
+import { LeadFunnelPanel } from "./lead-funnel-panel";
 import { StageBadge } from "./lead-stage";
 import { Alert, Button } from "./ui";
 
 const REFRESH_MS = 5_000;
 
-type Conversation = { lead: PublicLead; messages: PublicMessage[] };
+type Conversation = { lead: PublicLead; messages: PublicMessage[]; tasks: PublicTask[] };
 
 export function ConversationView({ leadId }: { leadId: string }) {
   const path = `/api/leads/${encodeURIComponent(leadId)}`;
@@ -92,7 +98,7 @@ export function ConversationView({ leadId }: { leadId: string }) {
     return <p className="text-sm text-gray-600">Carregando conversa…</p>;
   }
 
-  const { lead, messages } = conversation;
+  const { lead, messages, tasks } = conversation;
 
   return (
     <section className="space-y-4">
@@ -121,70 +127,83 @@ export function ConversationView({ leadId }: { leadId: string }) {
         </div>
       )}
 
-      {lead.stage === "QUALIFICANDO" && (
+      {isAutomationActive(lead) && (
         <p className="rounded-lg bg-violet-50 px-4 py-3 text-sm text-violet-800">
           A assistente virtual está conversando com este lead. Se você responder por
           aqui, ela para e a conversa fica com você.
         </p>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white">
-        <ol
-          role="log"
-          aria-label="Conversa"
-          className="flex max-h-[55vh] min-h-48 flex-col gap-2 overflow-y-auto p-4"
-        >
-          {messages.map((message) => {
-            const outgoing = message.direction === "ENVIADA";
-            const label = message.sentByBot
-              ? "Mensagem da assistente"
-              : outgoing
-                ? "Mensagem enviada"
-                : "Mensagem recebida";
-            return (
-              <li
-                key={message.id}
-                aria-label={label}
-                className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${
-                  outgoing
-                    ? "self-end bg-brand-100 text-gray-900"
-                    : "self-start bg-gray-100 text-gray-900"
-                }`}
-              >
-                {message.sentByBot && (
-                  <p className="mb-0.5 text-[11px] font-medium text-violet-700">Assistente</p>
-                )}
-                <p className="whitespace-pre-wrap break-words">{message.text}</p>
-                <p className="mt-1 text-right text-[11px] text-gray-500">
-                  {formatDateTime(message.sentAt)}
-                </p>
-              </li>
-            );
-          })}
-          <div ref={endRef} />
-        </ol>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="rounded-xl border border-gray-200 bg-white">
+          <ol
+            role="log"
+            aria-label="Conversa"
+            className="flex max-h-[55vh] min-h-48 flex-col gap-2 overflow-y-auto p-4"
+          >
+            {messages.map((message) => {
+              const outgoing = message.direction === "ENVIADA";
+              const label = message.sentByBot
+                ? "Mensagem da assistente"
+                : outgoing
+                  ? "Mensagem enviada"
+                  : "Mensagem recebida";
+              return (
+                <li
+                  key={message.id}
+                  aria-label={label}
+                  className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${
+                    outgoing
+                      ? "self-end bg-brand-100 text-gray-900"
+                      : "self-start bg-gray-100 text-gray-900"
+                  }`}
+                >
+                  {message.sentByBot && (
+                    <p className="mb-0.5 text-[11px] font-medium text-violet-700">Assistente</p>
+                  )}
+                  <p className="whitespace-pre-wrap break-words">{message.text}</p>
+                  <p className="mt-1 text-right text-[11px] text-gray-500">
+                    {formatDateTime(message.sentAt)}
+                  </p>
+                </li>
+              );
+            })}
+            <div ref={endRef} />
+          </ol>
 
-        <form onSubmit={onSubmit} className="space-y-3 border-t border-gray-200 p-4">
-          {sendError && <Alert>{sendError}</Alert>}
-          <div className="flex items-end gap-3">
-            <div className="flex-1">
-              <label htmlFor={replyId} className="sr-only">
-                Resposta
-              </label>
-              <textarea
-                id={replyId}
-                rows={2}
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                placeholder="Escreva uma resposta…"
-                className="block w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100"
-              />
+          <form onSubmit={onSubmit} className="space-y-3 border-t border-gray-200 p-4">
+            {sendError && <Alert>{sendError}</Alert>}
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label htmlFor={replyId} className="sr-only">
+                  Resposta
+                </label>
+                <textarea
+                  id={replyId}
+                  rows={2}
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  placeholder="Escreva uma resposta…"
+                  className="block w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100"
+                />
+              </div>
+              <Button type="submit" disabled={sending || !text.trim()}>
+                {sending ? "Enviando…" : "Enviar"}
+              </Button>
             </div>
-            <Button type="submit" disabled={sending || !text.trim()}>
-              {sending ? "Enviando…" : "Enviar"}
-            </Button>
-          </div>
-        </form>
+          </form>
+        </div>
+
+        <LeadFunnelPanel
+          lead={lead}
+          tasks={tasks}
+          onLeadChange={(updated) =>
+            setConversation((current) => current && { ...current, lead: updated })
+          }
+          onTasksChange={(updated) =>
+            setConversation((current) => current && { ...current, tasks: updated })
+          }
+        />
       </div>
     </section>
   );
