@@ -11,6 +11,7 @@ export function toPublicUser(user: User) {
     phone: user.phone,
     role: user.role,
     status: user.status,
+    messageAccess: user.messageAccess,
     createdAt: user.createdAt.toISOString(),
   };
 }

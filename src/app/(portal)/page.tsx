@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { leadScope } from "@/lib/access";
 import { formatPhone, ROLE_LABELS } from "@/lib/format";
 import { requirePageUser } from "@/server/http/current-user";
 
 export default async function HomePage() {
   const user = await requirePageUser();
   const firstName = user.name.split(" ")[0];
+  const scope = leadScope(user);
 
   return (
     <div className="space-y-6">
@@ -13,7 +15,11 @@ export default async function HomePage() {
         <p className="text-sm text-gray-600">
           {user.role === "GESTOR"
             ? "Gerencie a equipe que vai receber os leads do WhatsApp."
-            : "Aqui você vai acompanhar os leads que o rodízio enviar para você."}
+            : scope === "ALL"
+              ? "Veja e responda as conversas do WhatsApp da imobiliária."
+              : scope === "OWN"
+                ? "Veja e responda os leads que o rodízio enviou para você."
+                : "Seu acesso às conversas ainda não foi liberado. Fale com o gestor."}
         </p>
       </div>
 
@@ -40,12 +46,13 @@ export default async function HomePage() {
           </dl>
         </section>
 
-        {user.role === "GESTOR" && (
+        {scope !== "NONE" && (
           <section className="flex flex-col rounded-xl border border-gray-200 bg-white p-5">
             <h2 className="text-sm font-medium text-gray-500">Leads</h2>
             <p className="mt-3 flex-1 text-sm text-gray-700">
-              Veja quem escreveu para o WhatsApp da imobiliária e responda pelo
-              portal.
+              {scope === "OWN"
+                ? "Veja os leads que o rodízio entregou a você e responda pelo portal."
+                : "Veja quem escreveu para o WhatsApp da imobiliária e responda pelo portal."}
             </p>
             <Link
               href="/leads"

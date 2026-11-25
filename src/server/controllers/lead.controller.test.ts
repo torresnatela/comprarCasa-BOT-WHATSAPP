@@ -1,8 +1,10 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestApp, routeParams } from "../../../tests/app";
 import { createLead, createUser } from "../../../tests/factories";
 import { apiRequest } from "../../../tests/http";
 import { createTestDb, type TestDb } from "../../../tests/test-db";
+import { type MessageAccess, messages } from "../db/schema";
 import { AppError } from "../http/errors";
 
 let testDb: TestDb;
@@ -15,10 +17,13 @@ afterAll(() => testDb.close());
 
 async function setup(
   role: "GESTOR" | "VENDEDOR" = "GESTOR",
-  options: { whatsappConfigured?: boolean } = {},
+  options: { whatsappConfigured?: boolean; messageAccess?: MessageAccess } = {},
 ) {
   const app = createTestApp(testDb.db, undefined, options);
-  const actor = await createUser(testDb.db, { role });
+  const actor = await createUser(testDb.db, {
+    role,
+    ...(options.messageAccess && { messageAccess: options.messageAccess }),
+  });
   const { token } = await app.services.auth.createSession(actor.id);
   return { ...app, actor, session: token };
 }
@@ -60,8 +65,8 @@ describe("GET /api/leads", () => {
     });
   });
 
-  it("responde 401 sem sessão e 403 para vendedor", async () => {
-    const { controllers, session } = await setup("VENDEDOR");
+  it("responde 401 sem sessão e 403 para vendedor sem acesso", async () => {
+    const { controllers, session } = await setup("VENDEDOR", { messageAccess: "NENHUMA" });
 
     const anonymous = await controllers.lead.list(apiRequest("GET", "/api/leads"));
     const seller = await controllers.lead.list(apiRequest("GET", "/api/leads", { session }));
@@ -114,9 +119,9 @@ describe("GET /api/leads/[id]", () => {
     }
   });
 
-  it("responde 403 para vendedor", async () => {
-    const { controllers, session } = await setup("VENDEDOR");
-    const lead = await createLead(testDb.db);
+  it("responde 403 para vendedor sem acesso, mesmo no lead dele", async () => {
+    const { controllers, session, actor } = await setup("VENDEDOR", { messageAccess: "NENHUMA" });
+    const lead = await createLead(testDb.db, { assignedTo: actor.id });
 
     const response = await controllers.lead.show(
       apiRequest("GET", `/api/leads/${lead.id}`, { session }),
@@ -190,11 +195,11 @@ describe("POST /api/leads/[id]/mensagens", () => {
     expect(response.status).toBe(503);
   });
 
-  it("responde 404 para lead inexistente e 403 para vendedor", async () => {
+  it("responde 404 para lead inexistente e 403 para vendedor sem acesso", async () => {
     const gestor = await setup();
     expect((await reply(gestor, MISSING_ID, { text: "Oi" })).status).toBe(404);
 
-    const vendedor = await setup("VENDEDOR");
+    const vendedor = await setup("VENDEDOR", { messageAccess: "NENHUMA" });
     const lead = await createLead(testDb.db);
     expect((await reply(vendedor, lead.id, { text: "Oi" })).status).toBe(403);
     expect(vendedor.evolution.sent).toEqual([]);
@@ -317,7 +322,7 @@ describe("funil do lead", () => {
     expect(again.status).toBe(404);
   });
 
-  it("tarefa exige título e data; lead inexistente dá 404; vendedor 403", async () => {
+  it("tarefa exige título e data; lead inexistente dá 404; vendedor sem acesso 403", async () => {
     const app = await setup();
     const lead = await createLead(testDb.db);
 
@@ -328,8 +333,118 @@ describe("funil do lead", () => {
       (await call(app, "createTask", MISSING_ID, { title: "A", dueDate: "2026-11-25" })).status,
     ).toBe(404);
 
-    const seller = await setup("VENDEDOR");
+    const seller = await setup("VENDEDOR", { messageAccess: "NENHUMA" });
     expect((await call(seller, "changeStage", lead.id, { stage: "PARADO" })).status).toBe(403);
     expect((await call(seller, "setAutomation", lead.id, { paused: true })).status).toBe(403);
+  });
+});
+
+describe("acesso do vendedor às mensagens", () => {
+  type App = Awaited<ReturnType<typeof setup>>;
+  const list = async (app: App) => {
+    const response = await app.controllers.lead.list(
+      apiRequest("GET", "/api/leads", { session: app.session }),
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  const names = (body: { leads: { name: string }[] }) =>
+    body.leads.map((lead) => lead.name).sort();
+  const show = (app: App, leadId: string) =>
+    app.controllers.lead.show(
+      apiRequest("GET", `/api/leads/${leadId}`, { session: app.session }),
+      routeParams({ id: leadId }),
+    );
+  const reply = (app: App, leadId: string) =>
+    app.controllers.lead.reply(
+      apiRequest("POST", `/api/leads/${leadId}/mensagens`, {
+        session: app.session,
+        body: { text: "Oi" },
+      }),
+      routeParams({ id: leadId }),
+    );
+  const patch = (
+    app: App,
+    action: "changeStage" | "setAutomation" | "createTask",
+    leadId: string,
+    body: unknown,
+  ) =>
+    app.controllers.lead[action](
+      apiRequest("PATCH", `/api/leads/${leadId}`, { session: app.session, body }),
+      routeParams({ id: leadId }),
+    );
+
+  async function scenario(messageAccess?: MessageAccess) {
+    const app = await setup("VENDEDOR", messageAccess ? { messageAccess } : {});
+    const other = await createUser(testDb.db);
+    const own = await createLead(testDb.db, { name: "Meu", assignedTo: app.actor.id });
+    const foreign = await createLead(testDb.db, { name: "Do outro", assignedTo: other.id });
+    const unassigned = await createLead(testDb.db, { name: "Sem vendedor" });
+    return { app, own, foreign, unassigned };
+  }
+
+  it("vendedor novo começa com acesso só aos próprios leads", async () => {
+    const { app } = await scenario();
+    expect(app.actor.messageAccess).toBe("PROPRIAS");
+  });
+
+  it("TODAS: lista, abre e responde qualquer lead", async () => {
+    const { app, foreign, unassigned } = await scenario("TODAS");
+
+    const { status, body } = await list(app);
+    expect(status).toBe(200);
+    expect(names(body)).toEqual(["Do outro", "Meu", "Sem vendedor"]);
+    expect((await show(app, unassigned.id)).status).toBe(200);
+    expect((await reply(app, foreign.id)).status).toBe(201);
+  });
+
+  it("PROPRIAS: lista e responde só os leads entregues a ele", async () => {
+    const { app, own } = await scenario("PROPRIAS");
+
+    const { status, body } = await list(app);
+    expect(status).toBe(200);
+    expect(names(body)).toEqual(["Meu"]);
+    expect((await show(app, own.id)).status).toBe(200);
+
+    const response = await reply(app, own.id);
+    expect(response.status).toBe(201);
+    const [stored] = await testDb.db
+      .select()
+      .from(messages)
+      .where(eq(messages.leadId, own.id));
+    expect(stored.sentBy).toBe(app.actor.id);
+  });
+
+  it("PROPRIAS: lead de outro vendedor ou sem vendedor responde 404 em tudo", async () => {
+    const { app, foreign, unassigned } = await scenario("PROPRIAS");
+
+    for (const lead of [foreign, unassigned]) {
+      expect((await show(app, lead.id)).status).toBe(404);
+      expect((await reply(app, lead.id)).status).toBe(404);
+      expect((await patch(app, "changeStage", lead.id, { stage: "PARADO" })).status).toBe(404);
+      expect((await patch(app, "setAutomation", lead.id, { paused: true })).status).toBe(404);
+      expect(
+        (await patch(app, "createTask", lead.id, { title: "Ligar", dueDate: "2026-11-30" }))
+          .status,
+      ).toBe(404);
+    }
+    expect(app.evolution.sent).toEqual([]);
+  });
+
+  it("PROPRIAS: cuida do funil e das tarefas do próprio lead", async () => {
+    const { app, own } = await scenario("PROPRIAS");
+
+    expect((await patch(app, "changeStage", own.id, { stage: "PARADO" })).status).toBe(200);
+    expect(
+      (await patch(app, "createTask", own.id, { title: "Ligar", dueDate: "2026-11-30" })).status,
+    ).toBe(201);
+  });
+
+  it("NENHUMA: 403 em tudo, inclusive nos próprios leads", async () => {
+    const { app, own } = await scenario("NENHUMA");
+
+    expect((await list(app)).status).toBe(403);
+    expect((await show(app, own.id)).status).toBe(403);
+    expect((await reply(app, own.id)).status).toBe(403);
+    expect((await patch(app, "changeStage", own.id, { stage: "PARADO" })).status).toBe(403);
   });
 });

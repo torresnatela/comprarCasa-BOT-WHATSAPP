@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { MESSAGE_ACCESS_LABELS } from "@/lib/access";
 import { api, errorMessage } from "@/lib/api";
 import { formatPhone, ROLE_LABELS, STATUS_LABELS } from "@/lib/format";
 import type { PublicUser } from "@/server/controllers/presenters";
@@ -151,7 +152,14 @@ export function CollaboratorsView({ currentUserId }: { currentUserId: string }) 
                     <td className="whitespace-nowrap px-4 py-3">
                       {formatPhone(collaborator.phone)}
                     </td>
-                    <td className="px-4 py-3">{ROLE_LABELS[collaborator.role]}</td>
+                    <td className="px-4 py-3">
+                      {ROLE_LABELS[collaborator.role]}
+                      {collaborator.role === "VENDEDOR" && (
+                        <span className="block text-xs text-gray-500">
+                          Mensagens: {MESSAGE_ACCESS_LABELS[collaborator.messageAccess]}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${statusStyles[collaborator.status]}`}

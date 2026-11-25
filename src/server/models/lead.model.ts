@@ -56,8 +56,11 @@ export function leadModel(db: Database) {
       return lead ?? null;
     },
 
-    /** Leads com conversa mais recente primeiro, com vendedor e próxima tarefa. */
-    async list(): Promise<LeadListItem[]> {
+    /**
+     * Leads com conversa mais recente primeiro, com vendedor e próxima tarefa.
+     * Com `assignedTo`, só os entregues a esse vendedor.
+     */
+    async list(filter: { assignedTo?: string } = {}): Promise<LeadListItem[]> {
       const nextTasks = db
         .select({ leadId: leadTasks.leadId, due: min(leadTasks.dueDate).as("due") })
         .from(leadTasks)
@@ -69,6 +72,7 @@ export function leadModel(db: Database) {
         .from(leads)
         .leftJoin(users, eq(users.id, leads.assignedTo))
         .leftJoin(nextTasks, eq(nextTasks.leadId, leads.id))
+        .where(filter.assignedTo ? eq(leads.assignedTo, filter.assignedTo) : undefined)
         .orderBy(desc(leads.lastMessageAt));
       return rows.map(({ lead, sellerName, nextTaskDue }) => ({
         ...lead,

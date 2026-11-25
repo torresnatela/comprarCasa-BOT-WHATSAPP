@@ -5,6 +5,7 @@ import { createTestDb, type TestDb } from "../../../tests/test-db";
 import { leads } from "../db/schema";
 import { AppError, NotFoundError } from "../http/errors";
 import type { IncomingMessage } from "../integrations/evolution/webhook-payload";
+import { leadModel } from "../models/lead.model";
 import { createConversationService } from "./conversation.service";
 
 let testDb: TestDb;
@@ -90,7 +91,7 @@ describe("conversationService.receive", () => {
       "Ainda está disponível?",
     ]);
     expect(conversation.lead.lastMessageText).toBe("Ainda está disponível?");
-    expect(await service.listLeads()).toHaveLength(1);
+    expect(await leadModel(testDb.db).list()).toHaveLength(1);
   });
 
   it("ignora a reentrega da mesma mensagem", async () => {
@@ -125,7 +126,7 @@ describe("conversationService.receive", () => {
     const result = await service.receive(incoming({ fromMe: true, pushName: null }));
 
     expect(result).toEqual({ status: "ignored" });
-    expect(await service.listLeads()).toEqual([]);
+    expect(await leadModel(testDb.db).list()).toEqual([]);
   });
 });
 

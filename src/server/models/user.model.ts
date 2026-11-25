@@ -5,7 +5,7 @@ import { ConflictError } from "../http/errors";
 import { isUniqueViolation } from "./db-errors";
 
 export type UserPatch = Partial<
-  Pick<NewUser, "name" | "email" | "phone" | "role" | "status" | "passwordHash">
+  Pick<NewUser, "name" | "email" | "phone" | "role" | "status" | "passwordHash" | "messageAccess">
 >;
 
 export function normalizeEmail(email: string): string {
