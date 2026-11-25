@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DEAL_TYPES, LOST_REASONS, USER_ROLES } from "../db/schema";
+import { DEAL_TYPES, LOST_REASONS, MESSAGE_ACCESS_LEVELS, USER_ROLES } from "../db/schema";
 
 const email = z
   .string("Informe o e-mail.")
@@ -39,7 +39,16 @@ const name = z
 
 const role = z.enum(USER_ROLES, "Selecione o papel.");
 
-export const createCollaboratorSchema = z.object({ name, email, phone, role });
+/** Acesso às mensagens; sem ele, o cadastro usa o padrão do banco. */
+const messageAccess = z.enum(MESSAGE_ACCESS_LEVELS, "Selecione o acesso às mensagens.");
+
+export const createCollaboratorSchema = z.object({
+  name,
+  email,
+  phone,
+  role,
+  messageAccess: messageAccess.optional(),
+});
 
 export const updateCollaboratorSchema = z
   .object({
@@ -47,6 +56,7 @@ export const updateCollaboratorSchema = z
     email,
     phone,
     role,
+    messageAccess,
     active: z.boolean("Valor inválido."),
   })
   .partial();

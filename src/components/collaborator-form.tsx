@@ -1,6 +1,12 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import {
+  DEFAULT_MESSAGE_ACCESS,
+  MESSAGE_ACCESS_LABELS,
+  MESSAGE_ACCESS_LEVELS,
+  type MessageAccess,
+} from "@/lib/access";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { formatPhone, ROLE_LABELS } from "@/lib/format";
 import type { PublicUser } from "@/server/controllers/presenters";
@@ -23,6 +29,9 @@ export function CollaboratorForm({ collaborator, onClose, onSaved }: Props) {
     collaborator?.phone ? formatPhone(collaborator.phone) : "",
   );
   const [role, setRole] = useState<UserRole>(collaborator?.role ?? "VENDEDOR");
+  const [messageAccess, setMessageAccess] = useState<MessageAccess>(
+    collaborator?.messageAccess ?? DEFAULT_MESSAGE_ACCESS,
+  );
   const [fields, setFields] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -40,14 +49,20 @@ export function CollaboratorForm({ collaborator, onClose, onSaved }: Props) {
           `/api/colaboradores/${collaborator.id}`,
           {
             method: "PATCH",
-            body: { name, email, role, ...(keepEmptyPhone ? {} : { phone }) },
+            body: {
+              name,
+              email,
+              role,
+              messageAccess,
+              ...(keepEmptyPhone ? {} : { phone }),
+            },
           },
         );
         onSaved(result.collaborator);
       } else {
         const result = await api<{ collaborator: PublicUser; invite: InviteLink }>(
           "/api/colaboradores",
-          { method: "POST", body: { name, email, phone, role } },
+          { method: "POST", body: { name, email, phone, role, messageAccess } },
         );
         onSaved(result.collaborator, result.invite);
       }
@@ -106,6 +121,21 @@ export function CollaboratorForm({ collaborator, onClose, onSaved }: Props) {
             </option>
           ))}
         </SelectField>
+        {role === "VENDEDOR" && (
+          <SelectField
+            label="Acesso às mensagens"
+            value={messageAccess}
+            onChange={(event) => setMessageAccess(event.target.value as MessageAccess)}
+            error={fields.messageAccess}
+            hint="Quais conversas do WhatsApp o vendedor vê e responde pelo portal."
+          >
+            {MESSAGE_ACCESS_LEVELS.map((value) => (
+              <option key={value} value={value}>
+                {MESSAGE_ACCESS_LABELS[value]}
+              </option>
+            ))}
+          </SelectField>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose}>
             Cancelar

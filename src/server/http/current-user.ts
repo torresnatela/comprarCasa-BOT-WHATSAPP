@@ -2,6 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { leadScope } from "@/lib/access";
 import type { UserRole } from "@/lib/roles";
 import { services } from "../container";
 import { type PublicUser, toPublicUser } from "../controllers/presenters";
@@ -28,5 +29,12 @@ export async function requirePageUser(): Promise<PublicUser> {
 export async function requirePageRole(...roles: UserRole[]): Promise<PublicUser> {
   const user = await requirePageUser();
   if (!roles.includes(user.role)) redirect("/");
+  return user;
+}
+
+/** Exige acesso às mensagens (gestor ou vendedor com acesso); sem ele, volta ao início. */
+export async function requirePageLeadAccess(): Promise<PublicUser> {
+  const user = await requirePageUser();
+  if (leadScope(user) === "NONE") redirect("/");
   return user;
 }
